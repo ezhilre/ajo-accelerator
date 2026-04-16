@@ -1,65 +1,142 @@
 /* ── Journey Cleanup Card Dashboard ──────────────────────────────────────── */
 
-/* credential form */
-.jcc-cred-wrapper {
+/* ── modal overlay ──────────────────────────────────────────────────────────*/
+
+body.jcc-no-scroll {
+  overflow: hidden;
+}
+
+.jcc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 2rem 1rem;
-  min-height: 60vh;
-  align-items: flex-start;
+  padding: 1rem;
+  animation: jcc-fade-in 0.2s ease;
 }
 
-.jcc-cred-form {
+@keyframes jcc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.jcc-modal-box {
   background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 2.5rem 2rem;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   width: 100%;
-  max-width: 540px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  max-width: 600px;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 2rem 2rem 1.5rem;
+  animation: jcc-slide-up 0.25s ease;
 }
 
-.jcc-cred-logo {
-  text-align: center;
+@keyframes jcc-slide-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.jcc-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.jcc-modal-icon {
   font-size: 3rem;
-  margin-bottom: 0.75rem;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.jcc-cred-title {
-  text-align: center;
-  font-size: 1.4rem;
+.jcc-modal-title {
+  font-size: 1.35rem;
   font-weight: 700;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.25rem;
   color: #1a1a1a;
 }
 
-.jcc-cred-hint {
-  text-align: center;
+.jcc-modal-sub {
+  font-size: 0.875rem;
   color: #666;
-  font-size: 0.9rem;
-  margin: 0 0 1.5rem;
+  margin: 0;
 }
 
-.jcc-cred-error {
+.jcc-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.jcc-modal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-bottom: 0;
+}
+
+.jcc-modal-error {
   background: #fff0f0;
   border: 1px solid #f5c6c6;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #c0392b;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.85rem;
   font-size: 0.875rem;
   margin-bottom: 1rem;
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.jcc-cred-note {
+.jcc-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #f0f0f0;
+  flex-wrap: wrap;
+}
+
+.jcc-modal-note {
   font-size: 0.75rem;
-  color: #999;
-  text-align: center;
-  margin-top: 1rem;
+  color: #888;
+  margin: 0;
+  flex: 1;
 }
 
-.jcc-cred-actions {
-  margin-top: 1.25rem;
+.jcc-modal-submit {
+  padding: 0.7rem 1.5rem;
+  font-size: 0.95rem;
+  white-space: nowrap;
 }
+
+/* pre-dash placeholder */
+.jcc-pre-dash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  gap: 1rem;
+  color: #999;
+  font-size: 1rem;
+}
+
+.jcc-pre-icon {
+  font-size: 4rem;
+  opacity: 0.4;
+}
+
+/* ── shared form fields ──────────────────────────────────────────────────── */
 
 .jcc-field {
   display: flex;
@@ -68,54 +145,69 @@
   margin-bottom: 1rem;
 }
 
-.jcc-field label {
+.jcc-label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #444;
+  color: #333;
+}
+
+.jcc-req {
+  color: #d7373f;
+}
+
+.jcc-field-hint {
+  font-size: 0.75rem;
+  color: #888;
 }
 
 .jcc-field input,
 .jcc-field textarea {
   border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
   font-size: 0.875rem;
   font-family: inherit;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   resize: vertical;
+  background: #fafafa;
 }
 
 .jcc-field input:focus,
 .jcc-field textarea:focus {
   outline: none;
   border-color: #1473e6;
-  box-shadow: 0 0 0 2px rgba(20, 115, 230, 0.15);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(20, 115, 230, 0.12);
 }
 
-/* shared buttons */
+/* ── shared buttons ──────────────────────────────────────────────────────── */
+
 .jcc-btn-primary,
 .jcc-btn-pri {
   background: #1473e6;
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.6rem 1.25rem;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.1s;
   white-space: nowrap;
+  font-family: inherit;
 }
 
 .jcc-btn-primary:hover:not(:disabled),
 .jcc-btn-pri:hover:not(:disabled) {
   background: #0d66d0;
+  transform: translateY(-1px);
 }
 
 .jcc-btn-primary:disabled,
 .jcc-btn-pri:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .jcc-btn-secondary,
@@ -123,24 +215,19 @@
   background: #fff;
   color: #1473e6;
   border: 1px solid #1473e6;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.55rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
+  font-family: inherit;
 }
 
 .jcc-btn-secondary:hover,
 .jcc-btn-sec:hover {
   background: #f0f6ff;
-}
-
-.jcc-cred-actions .jcc-btn-primary {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: 1rem;
 }
 
 /* ── dashboard shell ──────────────────────────────────────────────────────── */
@@ -153,7 +240,6 @@
   margin: 0 auto;
 }
 
-/* header */
 .jcc-header {
   display: flex;
   align-items: center;
@@ -226,7 +312,7 @@
   flex-direction: column;
   gap: 0.3rem;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  transition: transform 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .jcc-sc:hover {
@@ -250,16 +336,12 @@
 
 .jcc-sc-total { border-top: 4px solid #5c5ce0; }
 .jcc-sc-total .jcc-sn { color: #5c5ce0; }
-
 .jcc-sc-live { border-top: 4px solid #2da44e; }
 .jcc-sc-live .jcc-sn { color: #2da44e; }
-
 .jcc-sc-draft { border-top: 4px solid #f7a325; }
 .jcc-sc-draft .jcc-sn { color: #f7a325; }
-
 .jcc-sc-failed { border-top: 4px solid #d7373f; }
 .jcc-sc-failed .jcc-sn { color: #d7373f; }
-
 .jcc-sc-closed { border-top: 4px solid #888; }
 .jcc-sc-closed .jcc-sn { color: #888; }
 
@@ -272,9 +354,7 @@
   transition: opacity 0.4s;
 }
 
-.jcc-prog-wrap.jcc-pd {
-  opacity: 0;
-}
+.jcc-prog-wrap.jcc-pd { opacity: 0; }
 
 .jcc-prog-track {
   flex: 1;
@@ -296,13 +376,11 @@
   font-size: 0.8rem;
   color: #888;
   white-space: nowrap;
-  min-width: 220px;
+  min-width: 240px;
 }
 
 /* controls */
-.jcc-controls {
-  margin-bottom: 1rem;
-}
+.jcc-controls { margin-bottom: 1rem; }
 
 .jcc-search-wrap {
   display: flex;
@@ -318,14 +396,14 @@
 
 .jcc-search-wrap:focus-within {
   border-color: #1473e6;
-  box-shadow: 0 0 0 2px rgba(20, 115, 230, 0.15);
+  box-shadow: 0 0 0 3px rgba(20, 115, 230, 0.12);
 }
 
 .jcc-search {
   flex: 1;
   border: none;
   outline: none;
-  padding: 0.6rem 0;
+  padding: 0.65rem 0;
   font-size: 0.9rem;
   background: transparent;
   font-family: inherit;
@@ -347,10 +425,7 @@
   transition: background 0.15s;
 }
 
-.jcc-clr-btn:hover {
-  background: #f0f0f0;
-  color: #333;
-}
+.jcc-clr-btn:hover { background: #f0f0f0; color: #333; }
 
 .jcc-filter-row {
   display: flex;
@@ -394,9 +469,7 @@
   transition: background 0.15s;
 }
 
-.jcc-dir-btn:hover {
-  background: #f5f5f5;
-}
+.jcc-dir-btn:hover { background: #f5f5f5; }
 
 .jcc-rc {
   font-size: 0.82rem;
@@ -451,17 +524,9 @@
   transition: background 0.1s;
 }
 
-.jcc-row:hover {
-  background: #f8f9ff;
-}
-
-.jcc-row-exp {
-  background: #f0f4ff;
-}
-
-.jcc-row-exp:hover {
-  background: #e8eeff;
-}
+.jcc-row:hover { background: #f8f9ff; }
+.jcc-row-exp { background: #f0f4ff; }
+.jcc-row-exp:hover { background: #e8eeff; }
 
 .jcc-tbl td {
   padding: 0.65rem 0.85rem;
@@ -484,15 +549,9 @@
   transition: background 0.15s, border-color 0.15s;
 }
 
-.jcc-tog:hover {
-  background: #f0f0f0;
-  border-color: #aaa;
-}
+.jcc-tog:hover { background: #f0f0f0; border-color: #aaa; }
 
-.jcc-cn {
-  max-width: 280px;
-}
-
+.jcc-cn { max-width: 280px; }
 .jcc-cn span {
   display: block;
   overflow: hidden;
@@ -501,22 +560,9 @@
   font-weight: 500;
 }
 
-.jcc-cd {
-  white-space: nowrap;
-  font-size: 0.82rem;
-  color: #555;
-}
-
-.jcc-cp {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.jcc-cc {
-  text-align: center;
-}
+.jcc-cd { white-space: nowrap; font-size: 0.82rem; color: #555; }
+.jcc-cp { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcc-cc { text-align: center; }
 
 /* status badges */
 .jcc-st {
@@ -533,7 +579,7 @@
 .jcc-st-live { background: #d4f5e2; color: #1a6636; }
 .jcc-st-draft { background: #fff3cd; color: #7a5200; }
 .jcc-st-failed { background: #fde8e8; color: #a61c1c; }
-.jcc-st-closed { background: #efefef; color: #555; }
+.jcc-st-closed,
 .jcc-st-stopped { background: #efefef; color: #555; }
 .jcc-st-unknown { background: #f0f0f0; color: #888; }
 
@@ -551,7 +597,7 @@
 .jcc-stale-warn { color: #c97b00; background: #fff8e1; }
 .jcc-stale-critical { color: #d7373f; background: #fde8e8; }
 
-/* stale badge (in detail) */
+/* stale badge */
 .jcc-stale-badge {
   display: inline-block;
   padding: 0.2rem 0.65rem;
@@ -571,9 +617,7 @@
   border-bottom: 2px solid #dde3ff;
 }
 
-.jcc-dpanel {
-  padding: 1.25rem 1.5rem;
-}
+.jcc-dpanel { padding: 1.25rem 1.5rem; }
 
 .jcc-dgrid {
   display: grid;
@@ -591,9 +635,7 @@
   gap: 0.3rem;
 }
 
-.jcc-df {
-  grid-column: 1 / -1;
-}
+.jcc-df { grid-column: 1 / -1; }
 
 .jcc-dlbl {
   font-size: 0.72rem;
@@ -603,21 +645,10 @@
   color: #888;
 }
 
-.jcc-dval {
-  font-size: 0.875rem;
-  color: #1a1a1a;
-  word-break: break-all;
-}
+.jcc-dval { font-size: 0.875rem; color: #1a1a1a; word-break: break-all; }
 
-.jcc-mono {
-  font-family: 'Courier New', 'SF Mono', 'Menlo', monospace;
-  font-size: 0.82rem;
-}
-
-.jcc-sm {
-  font-size: 0.75rem;
-  color: #666;
-}
+.jcc-mono { font-family: 'Courier New', 'SF Mono', 'Menlo', monospace; font-size: 0.82rem; }
+.jcc-sm { font-size: 0.75rem; color: #666; }
 
 .jcc-copy {
   background: none;
@@ -632,10 +663,7 @@
   transition: background 0.15s;
 }
 
-.jcc-copy:hover {
-  background: #f0f0f0;
-  color: #333;
-}
+.jcc-copy:hover { background: #f0f0f0; color: #333; }
 
 /* empty state */
 .jcc-empty {
@@ -661,10 +689,7 @@
   border-top: 1px solid #eee;
 }
 
-.jcc-pi {
-  font-size: 0.82rem;
-  color: #666;
-}
+.jcc-pi { font-size: 0.82rem; color: #666; }
 
 .jcc-pnav {
   display: flex;
@@ -686,69 +711,25 @@
   font-family: inherit;
 }
 
-.jcc-pb:hover:not(:disabled) {
-  background: #f0f6ff;
-  border-color: #1473e6;
-  color: #1473e6;
-}
+.jcc-pb:hover:not(:disabled) { background: #f0f6ff; border-color: #1473e6; color: #1473e6; }
+.jcc-pb:disabled { opacity: 0.4; cursor: not-allowed; }
+.jcc-pb-a { background: #1473e6; color: #fff; border-color: #1473e6; font-weight: 700; }
+.jcc-pb-a:hover { background: #0d66d0 !important; }
 
-.jcc-pb:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.jcc-pb-a {
-  background: #1473e6;
-  color: #fff;
-  border-color: #1473e6;
-  font-weight: 700;
-}
-
-.jcc-pb-a:hover {
-  background: #0d66d0 !important;
-}
-
-.jcc-pe {
-  padding: 0 0.2rem;
-  color: #aaa;
-  font-size: 0.9rem;
-}
+.jcc-pe { padding: 0 0.2rem; color: #aaa; font-size: 0.9rem; }
 
 /* responsive */
-@media (max-width: 768px) {
-  .jcc-dashboard {
-    padding: 1rem 0.75rem;
-  }
-
-  .jcc-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .jcc-summary {
-    gap: 0.6rem;
-  }
-
-  .jcc-sc {
-    min-width: 80px;
-    padding: 0.75rem;
-  }
-
-  .jcc-sn {
-    font-size: 1.5rem;
-  }
-
-  .jcc-filter-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .jcc-rc {
-    margin-left: 0;
-  }
-
-  .jcc-pag {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+@media (max-width: 640px) {
+  .jcc-modal-box { padding: 1.25rem; }
+  .jcc-modal-row { grid-template-columns: 1fr; }
+  .jcc-modal-footer { flex-direction: column; align-items: stretch; }
+  .jcc-modal-submit { width: 100%; text-align: center; padding: 0.75rem; }
+  .jcc-dashboard { padding: 1rem 0.75rem; }
+  .jcc-header { flex-direction: column; align-items: flex-start; }
+  .jcc-summary { gap: 0.6rem; }
+  .jcc-sc { min-width: 80px; padding: 0.75rem; }
+  .jcc-sn { font-size: 1.5rem; }
+  .jcc-filter-row { flex-direction: column; align-items: flex-start; }
+  .jcc-rc { margin-left: 0; }
+  .jcc-pag { flex-direction: column; align-items: flex-start; }
 }
