@@ -281,6 +281,7 @@ function showDashboard(root, cfg) {
   let pg = 0;
   let nameQ = '';
   let statusQ = 'all';
+  let createdByQ = 'all';
   let sortK = 'lastModifiedAt';
   let sortD = 'asc';
   let loading = true;
@@ -300,6 +301,7 @@ function showDashboard(root, cfg) {
     + '  </div>'
     + '  <div class="jcc-header-right">'
     + `    <span class="jcc-sandbox-badge">${esc(cfg.sandbox)}</span>`
+    + '    <button class="jcc-btn-sec" id="jr-csv">&#x1F4E5; Export CSV</button>'
     + '    <button class="jcc-btn-sec" id="jr-reconfig">&#x2699; Reconfigure</button>'
     + '    <button class="jcc-btn-pri" id="jr-refresh" disabled>&#x21BA; Refresh</button>'
     + '  </div>'
@@ -334,6 +336,12 @@ function showDashboard(root, cfg) {
     + '      </select>'
     + '    </div>'
     + '    <div class="jcc-fg">'
+    + '      <label for="jcc-cb">Created By</label>'
+    + '      <select id="jcc-cb" class="jcc-sel">'
+    + '        <option value="all">All Owners</option>'
+    + '      </select>'
+    + '    </div>'
+    + '    <div class="jcc-fg">'
     + '      <label for="jcc-sk">Sort by</label>'
     + '      <select id="jcc-sk" class="jcc-sel">'
     + '        <option value="lastModifiedAt">Last Modified</option>'
@@ -350,9 +358,9 @@ function showDashboard(root, cfg) {
     + '<div class="jcc-tbl-wrap">'
     + '  <table class="jcc-tbl">'
     + '    <thead><tr>'
-    + '      <th></th><th>Name</th><th>Status</th><th>Ver.</th>'
-    + '      <th>Sandbox</th><th>Created By</th><th>Created At</th>'
-    + '      <th>Modified By</th><th>Last Modified</th><th>Stale</th>'
+    + '      <th></th><th>Name</th><th>Status</th>'
+    + '      <th>Created By</th><th>Created At</th>'
+    + '      <th>Modified By</th><th>Stale</th>'
     + '    </tr></thead>'
     + '    <tbody id="jcc-tb"></tbody>'
     + '  </table>'
@@ -372,6 +380,7 @@ function showDashboard(root, cfg) {
   const sqEl = dash.querySelector('#jcc-sq');
   const sqClr = dash.querySelector('#jcc-sq-clr');
   const sfEl = dash.querySelector('#jcc-sf');
+  const cbEl = dash.querySelector('#jcc-cb');
   const skEl = dash.querySelector('#jcc-sk');
   const sdBtn = dash.querySelector('#jcc-sd');
   const rcEl = dash.querySelector('#jcc-rc');
@@ -382,6 +391,8 @@ function showDashboard(root, cfg) {
 
   function updSummary() {
     const co = cutoff();
+    // Live journeys: all live ones from API are stale (API filter is lastModifiedAt<today)
+    // so count live journeys directly; apply 30-day cutoff consistently
     const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
     const cnt = (s) => stale.filter((j) => (j.status || '').toLowerCase() === s).length;
     dash.querySelector('#st').textContent = stale.length;
@@ -391,12 +402,23 @@ function showDashboard(root, cfg) {
     dash.querySelector('#sc').textContent = cnt('closed') + cnt('stopped');
   }
 
+  // Rebuild the "Created By" dropdown from current data
+  function updCreatedByFilter() {
+    const co = cutoff();
+    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+    const names = [...new Set(stale.map((j) => j.metadata?.createdBy || '').filter(Boolean))].sort();
+    const prev = cbEl.value;
+    cbEl.innerHTML = '<option value="all">All Owners</option>'
+      + names.map((n) => `<option value="${esc(n)}"${n === prev ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  }
+
   function applyF() {
     const co = cutoff();
     const q = nameQ.toLowerCase();
     filtered = all.filter((j) => {
       if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
       if (statusQ !== 'all' && (j.status || '').toLowerCase() !== statusQ) return false;
+      if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (q) {
         const hay = [j.name, j.id, j.status, j.sandboxName, j.version,
           j.metadata?.createdBy, j.metadata?.lastModifiedBy].join(' ').toLowerCase();
@@ -485,12 +507,9 @@ function showDashboard(root, cfg) {
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
           `<td><span class="jcc-st jcc-st-${sc}">${esc(j.status || '\u2014')}</span></td>`,
-          `<td class="jcc-cc">${esc(j.version || '\u2014')}</td>`,
-          `<td>${esc(j.sandboxName || '\u2014')}</td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.createdById || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cd" title="${esc(j.metadata?.createdAt || '')}">${fmtDate(j.metadata?.createdAt)}</td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.lastModifiedById || '')}">${esc(j.metadata?.lastModifiedBy || '\u2014')}</td>`,
-          `<td class="jcc-cd" title="${esc(j.metadata?.lastModifiedAt || '')}">${fmtDate(j.metadata?.lastModifiedAt)}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
         ].join('');
         tb.appendChild(tr);
@@ -502,6 +521,31 @@ function showDashboard(root, cfg) {
       });
     }
     renderPag(tot, pages);
+  }
+
+  // ── CSV export ──────────────────────────────────────────────────────────────
+  function exportCsv() {
+    const csvQ = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const headers = ['ID', 'Name', 'Status', 'Version', 'Sandbox', 'IMS Org ID',
+      'Created By', 'Created By ID', 'Created At',
+      'Last Modified By', 'Last Modified By ID', 'Last Modified At',
+      'Days Stale'];
+    const rows = filtered.map((j) => [
+      j.id, j.name, j.status, j.version, j.sandboxName, j.imsOrgId,
+      j.metadata?.createdBy, j.metadata?.createdById, j.metadata?.createdAt,
+      j.metadata?.lastModifiedBy, j.metadata?.lastModifiedById, j.metadata?.lastModifiedAt,
+      daysAgo(j.metadata?.lastModifiedAt),
+    ].map(csvQ).join(','));
+    const csv = [headers.map(csvQ).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `journey-cleanup-${todayIso()}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    // eslint-disable-next-line no-console
+    console.log(`[JCC] CSV exported — ${filtered.length} rows`);
   }
 
   function renderPag(tot, pages) {
@@ -554,12 +598,16 @@ function showDashboard(root, cfg) {
   sqClr.style.display = 'none';
   sqClr.addEventListener('click', () => { sqEl.value = ''; nameQ = ''; sqClr.style.display = 'none'; applyF(); });
   sfEl.addEventListener('change', () => { statusQ = sfEl.value; applyF(); });
+  cbEl.addEventListener('change', () => { createdByQ = cbEl.value; applyF(); });
   skEl.addEventListener('change', () => { sortK = skEl.value; applyF(); });
   sdBtn.addEventListener('click', () => {
     sortD = sortD === 'asc' ? 'desc' : 'asc';
     sdBtn.textContent = sortD === 'asc' ? '\u2191 Oldest' : '\u2193 Newest';
     applyF();
   });
+
+  const csvBtn = dash.querySelector('#jr-csv');
+  csvBtn.addEventListener('click', exportCsv);
 
   reconfigBtn.addEventListener('click', () => {
     showModal((newCfg) => { showDashboard(root, newCfg); });
@@ -579,24 +627,20 @@ function showDashboard(root, cfg) {
     fetchAll(
       cfg,
       (chunk, cumul, pageNum) => {
-        // pageNum is 0-based; derive totalPages from cumul + PAGE_SIZE on first chunk
-        if (pageNum === 0 && chunk.length > 0) {
-          // totalPages will be updated via console; estimate from cumul for progress
-          totalPages = totalPages || 1;
-        }
+        if (pageNum === 0 && chunk.length > 0) totalPages = totalPages || 1;
         totalPages = Math.max(totalPages, pageNum + 1);
         all = cumul;
-        // progress: use pageNum relative to expected total (grows as we learn more pages)
         const pct = totalPages > 1 ? Math.min(90, Math.round((pageNum / totalPages) * 85) + 5) : 50;
         setP(pct, `Page ${pageNum + 1} loaded \u2014 ${cumul.length} journeys fetched\u2026`);
         updSummary();
+        updCreatedByFilter();
         applyF();
       },
       (err) => { showErr(`Fetch error: ${err.message}`); },
       (final) => {
         all = final; loading = false; refBtn.disabled = false;
         setP(100, `Done \u2014 ${final.length} journeys loaded`);
-        updSummary(); applyF(); doneP();
+        updSummary(); updCreatedByFilter(); applyF(); doneP();
       },
     );
   }
