@@ -53,9 +53,16 @@ function getSaved() {
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
-async function apiGet(cfg, page) {
-  const f = encodeURIComponent('status=draft,live,failed,closed,stopped');
-  const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${f}`;
+// Build an ISO date string like "2026-02-26" from a Date object
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function apiGet(cfg, page, afterDate) {
+  // Filter format (must be URL-encoded):
+  //   status=draft,live,failed,stopped,closed&metadata.lastModifiedAt>2026-02-26
+  const rawFilter = `status=draft,live,failed,stopped,closed&metadata.lastModifiedAt>${afterDate}`;
+  const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${cfg.token}`,
@@ -64,23 +71,64 @@ async function apiGet(cfg, page) {
       'x-sandbox-name': cfg.sandbox,
     },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} – ${res.statusText}${body ? `: ${body}` : ''}`);
+  }
   return res.json();
 }
 
+// Strategy: fetch page=0,1,2… with a fixed afterDate window.
+// The API seems to cap results; we scroll back in time by 30-day windows
+// until we find nothing new or have gone back far enough.
 async function fetchAll(cfg, onChunk, onErr, onDone) {
   const all = [];
-  let page = 0;
+  const seen = new Set();
+  let chunkIdx = 0;
+
+  // We fetch in 30-day windows rolling back from today up to 2 years
+  const today = new Date();
+  const earliest = new Date(today);
+  earliest.setFullYear(earliest.getFullYear() - 2); // 2 years back
+
+  let windowEnd = new Date(today);
+  let windowStart = new Date(today);
+  windowStart.setDate(windowStart.getDate() - 30);
+
   let go = true;
-  while (go) {
-    let data;
-    try { data = await apiGet(cfg, page); } catch (e) { onErr(e); break; }
-    const items = data.results || data.items || data.content || [];
-    if (!items.length) break;
-    all.push(...items);
-    onChunk([...items], [...all], page);
-    if (items.length < PAGE_SIZE) { go = false; } else { page += 1; }
+  while (go && windowStart >= earliest) {
+    const afterDate = isoDate(windowStart);
+    let page = 0;
+    let pageGo = true;
+
+    while (pageGo) {
+      let data;
+      try { data = await apiGet(cfg, page, afterDate); } catch (e) { onErr(e); pageGo = false; break; }
+      const items = (data.results || data.items || data.content || []).filter((j) => {
+        if (seen.has(j.id)) return false;
+        // only keep items whose lastModifiedAt is within our window
+        const t = new Date(j.metadata?.lastModifiedAt || 0).getTime();
+        return t > windowStart.getTime() && t <= windowEnd.getTime();
+      });
+
+      if (items.length) {
+        items.forEach((j) => seen.add(j.id));
+        all.push(...items);
+        onChunk([...items], [...all], chunkIdx);
+        chunkIdx += 1;
+      }
+
+      // If full page returned, try next page in same window
+      const total = (data.results || data.items || data.content || []).length;
+      if (total < PAGE_SIZE) { pageGo = false; } else { page += 1; }
+    }
+
+    // Slide window back 30 days
+    windowEnd = new Date(windowStart);
+    windowStart = new Date(windowStart);
+    windowStart.setDate(windowStart.getDate() - 30);
   }
+
   onDone([...all]);
 }
 
