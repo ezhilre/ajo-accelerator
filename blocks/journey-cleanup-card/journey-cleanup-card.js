@@ -53,17 +53,18 @@ function getSaved() {
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
-// Build an ISO date string like "2026-02-26" from a Date object
-function isoDate(d) {
-  return d.toISOString().slice(0, 10);
+// Today's date as "YYYY-MM-DD"
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-async function apiGet(cfg, page, afterDate) {
-  // Exact filter format matching the working curl:
-  //   status=draft,live&metadata.lastModifiedAt>2026-02-26
-  // encodeURIComponent encodes = → %3D, , → %2C, & → %26, > → %3E
-  const rawFilter = `status=draft,live&metadata.lastModifiedAt>${afterDate}`;
+// Single page fetch.
+// Filter: status=draft,live,failed,stopped,closed&metadata.lastModifiedAt<TODAY
+async function apiGet(cfg, page) {
+  const rawFilter = `status=draft,live,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
+  // eslint-disable-next-line no-console
+  console.log(`[JCC] GET page=${page} | filter: ${rawFilter} | url: ${url}`);
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${cfg.token}`,
@@ -74,69 +75,79 @@ async function apiGet(cfg, page, afterDate) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    // eslint-disable-next-line no-console
+    console.error(`[JCC] API error page=${page} HTTP ${res.status}`, body);
     throw new Error(`HTTP ${res.status} – ${res.statusText}${body ? `: ${body}` : ''}`);
   }
-  return res.json();
+  const json = await res.json();
+  // eslint-disable-next-line no-console
+  console.log(`[JCC] page=${page} received ${(json.results || []).length} items | totalCount=${json.pagination?.totalCount ?? 'n/a'}`);
+  return json;
 }
 
-// Strategy: fetch pages 0,1,2… for a given afterDate window.
-// Roll the window back 30 days at a time until no results or 2-year limit.
-// Abort entirely on any HTTP error (no retry, no next window).
+// Fetch all pages sequentially.
+// Page 0 reveals pagination.totalCount → compute total pages → fetch 1…N.
+// Stops immediately on any HTTP error.
 async function fetchAll(cfg, onChunk, onErr, onDone) {
   const all = [];
-  const seen = new Set();
-  let chunkIdx = 0;
-  let fatalError = false;
+  // eslint-disable-next-line no-console
+  console.log('[JCC] fetchAll started');
 
-  // Rolling 30-day windows back from today up to 2 years
-  const today = new Date();
-  const earliest = new Date(today);
-  earliest.setFullYear(earliest.getFullYear() - 2);
-
-  let windowEnd = new Date(today);
-  let windowStart = new Date(today);
-  windowStart.setDate(windowStart.getDate() - 30);
-
-  while (!fatalError && windowStart >= earliest) {
-    const afterDate = isoDate(windowStart);
-    let page = 0;
-    let pageGo = true;
-
-    while (pageGo && !fatalError) {
-      let data;
-      try {
-        data = await apiGet(cfg, page, afterDate);
-      } catch (e) {
-        // Stop all further API calls on any error (incl. 500)
-        fatalError = true;
-        onErr(e);
-        break;
-      }
-
-      const raw = data.results || data.items || data.content || [];
-      const items = raw.filter((j) => {
-        if (seen.has(j.id)) return false;
-        const t = new Date(j.metadata?.lastModifiedAt || 0).getTime();
-        return t > windowStart.getTime() && t <= windowEnd.getTime();
-      });
-
-      if (items.length) {
-        items.forEach((j) => seen.add(j.id));
-        all.push(...items);
-        onChunk([...items], [...all], chunkIdx);
-        chunkIdx += 1;
-      }
-
-      // Stop paging if we got fewer than a full page
-      if (raw.length < PAGE_SIZE) { pageGo = false; } else { page += 1; }
-    }
-
-    // Slide window back 30 days
-    windowEnd = new Date(windowStart);
-    windowStart = new Date(windowStart);
-    windowStart.setDate(windowStart.getDate() - 30);
+  // ── page 0 (bootstrap) ──────────────────────────────────────────────────
+  let data0;
+  try {
+    data0 = await apiGet(cfg, 0);
+  } catch (e) {
+    onErr(e);
+    onDone([]);
+    return;
   }
 
+  const items0 = data0.results || [];
+  const totalCount = data0.pagination?.totalCount ?? items0.length;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  // eslint-disable-next-line no-console
+  console.log(`[JCC] totalCount=${totalCount} → totalPages=${totalPages}`);
+
+  if (items0.length) {
+    all.push(...items0);
+    onChunk([...items0], [...all], 0);
+  }
+
+  if (totalPages <= 1) {
+    // eslint-disable-next-line no-console
+    console.log('[JCC] Single page — done.');
+    onDone([...all]);
+    return;
+  }
+
+  // ── pages 1 … totalPages-1 ──────────────────────────────────────────────
+  for (let page = 1; page < totalPages; page += 1) {
+    let data;
+    try {
+      data = await apiGet(cfg, page);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`[JCC] Fatal error at page=${page} — aborting remaining ${totalPages - page} pages`);
+      onErr(e);
+      break;
+    }
+
+    const items = data.results || [];
+    if (!items.length) {
+      // eslint-disable-next-line no-console
+      console.warn(`[JCC] page=${page} returned 0 items — stopping early`);
+      break;
+    }
+
+    all.push(...items);
+    onChunk([...items], [...all], page);
+    // eslint-disable-next-line no-console
+    console.log(`[JCC] cumulative=${all.length} / ${totalCount}`);
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[JCC] fetchAll complete — ${all.length} total journeys`);
   onDone([...all]);
 }
 
@@ -563,21 +574,28 @@ function showDashboard(root, cfg) {
   });
 
   function startLoad() {
-    let pgCount = 0;
-    setP(5, 'Fetching page 1...');
+    let totalPages = 0;
+    setP(5, 'Fetching page 1\u2026');
     fetchAll(
       cfg,
       (chunk, cumul, pageNum) => {
-        pgCount = pageNum + 1;
+        // pageNum is 0-based; derive totalPages from cumul + PAGE_SIZE on first chunk
+        if (pageNum === 0 && chunk.length > 0) {
+          // totalPages will be updated via console; estimate from cumul for progress
+          totalPages = totalPages || 1;
+        }
+        totalPages = Math.max(totalPages, pageNum + 1);
         all = cumul;
-        setP(Math.min(90, 5 + pgCount * 15), `Page ${pgCount} loaded \u2014 ${cumul.length} journeys fetched`);
+        // progress: use pageNum relative to expected total (grows as we learn more pages)
+        const pct = totalPages > 1 ? Math.min(90, Math.round((pageNum / totalPages) * 85) + 5) : 50;
+        setP(pct, `Page ${pageNum + 1} loaded \u2014 ${cumul.length} journeys fetched\u2026`);
         updSummary();
         applyF();
       },
       (err) => { showErr(`Fetch error: ${err.message}`); },
       (final) => {
         all = final; loading = false; refBtn.disabled = false;
-        setP(100, `Done \u2014 ${final.length} total journeys fetched`);
+        setP(100, `Done \u2014 ${final.length} journeys loaded`);
         updSummary(); applyF(); doneP();
       },
     );
