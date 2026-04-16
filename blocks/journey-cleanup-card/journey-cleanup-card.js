@@ -59,9 +59,10 @@ function todayIso() {
 }
 
 // Single page fetch.
-// Filter: status=draft,live,failed,stopped,closed&metadata.lastModifiedAt<TODAY
+// Filter: status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<TODAY
+// Note: AJO API uses "deployed" for what the UI calls "Live"
 async function apiGet(cfg, page) {
-  const rawFilter = `status=draft,live,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
+  const rawFilter = `status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
   // eslint-disable-next-line no-console
   console.log(`[JCC] GET page=${page} | filter: ${rawFilter} | url: ${url}`);
@@ -301,7 +302,8 @@ function showDashboard(root, cfg) {
     + '  </div>'
     + '  <div class="jcc-header-right">'
     + `    <span class="jcc-sandbox-badge">${esc(cfg.sandbox)}</span>`
-    + '    <button class="jcc-btn-sec" id="jr-csv">&#x1F4E5; Export CSV</button>'
+    + '    <button class="jcc-btn-sec" id="jr-csv-all">&#x1F4E5; Download All CSV</button>'
+    + '    <button class="jcc-btn-sec" id="jr-csv">&#x1F4E5; Export Filtered CSV</button>'
     + '    <button class="jcc-btn-sec" id="jr-reconfig">&#x2699; Reconfigure</button>'
     + '    <button class="jcc-btn-pri" id="jr-refresh" disabled>&#x21BA; Refresh</button>'
     + '  </div>'
@@ -360,7 +362,7 @@ function showDashboard(root, cfg) {
     + '    <thead><tr>'
     + '      <th></th><th>Name</th><th>Status</th>'
     + '      <th>Created By</th><th>Created At</th>'
-    + '      <th>Modified By</th><th>Stale</th>'
+    + '      <th>Stale</th>'
     + '    </tr></thead>'
     + '    <tbody id="jcc-tb"></tbody>'
     + '  </table>'
@@ -391,12 +393,11 @@ function showDashboard(root, cfg) {
 
   function updSummary() {
     const co = cutoff();
-    // Live journeys: all live ones from API are stale (API filter is lastModifiedAt<today)
-    // so count live journeys directly; apply 30-day cutoff consistently
     const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+    // API returns "deployed" for Live journeys
     const cnt = (s) => stale.filter((j) => (j.status || '').toLowerCase() === s).length;
     dash.querySelector('#st').textContent = stale.length;
-    dash.querySelector('#sl').textContent = cnt('live');
+    dash.querySelector('#sl').textContent = cnt('deployed');
     dash.querySelector('#sd').textContent = cnt('draft');
     dash.querySelector('#sf').textContent = cnt('failed');
     dash.querySelector('#sc').textContent = cnt('closed') + cnt('stopped');
@@ -417,7 +418,9 @@ function showDashboard(root, cfg) {
     const q = nameQ.toLowerCase();
     filtered = all.filter((j) => {
       if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
-      if (statusQ !== 'all' && (j.status || '').toLowerCase() !== statusQ) return false;
+      // UI shows "live" but API returns "deployed" — map filter value
+      const apiStatus = statusQ === 'live' ? 'deployed' : statusQ;
+      if (apiStatus !== 'all' && (j.status || '').toLowerCase() !== apiStatus) return false;
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (q) {
         const hay = [j.name, j.id, j.status, j.sandboxName, j.version,
@@ -503,13 +506,15 @@ function showDashboard(root, cfg) {
         const isExp = expanded === j.id;
         const tr = document.createElement('tr');
         tr.className = `jcc-row${isExp ? ' jcc-row-exp' : ''}`;
+        // Display "Live" in UI for what the API returns as "deployed"
+        const displayStatus = (j.status || '').toLowerCase() === 'deployed' ? 'Live' : (j.status || '—');
+        const displaySc = (j.status || '').toLowerCase() === 'deployed' ? 'live' : sc;
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
-          `<td><span class="jcc-st jcc-st-${sc}">${esc(j.status || '\u2014')}</span></td>`,
+          `<td><span class="jcc-st jcc-st-${displaySc}">${esc(displayStatus)}</span></td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.createdById || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cd" title="${esc(j.metadata?.createdAt || '')}">${fmtDate(j.metadata?.createdAt)}</td>`,
-          `<td class="jcc-cp" title="${esc(j.metadata?.lastModifiedById || '')}">${esc(j.metadata?.lastModifiedBy || '\u2014')}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
         ].join('');
         tb.appendChild(tr);
@@ -523,29 +528,47 @@ function showDashboard(root, cfg) {
     renderPag(tot, pages);
   }
 
-  // ── CSV export ──────────────────────────────────────────────────────────────
-  function exportCsv() {
+  // ── CSV export — downloads ALL stale journeys (not just current page/filter) ──
+  function buildCsv(data) {
     const csvQ = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const displaySt = (s) => ((s || '').toLowerCase() === 'deployed' ? 'Live' : (s || ''));
     const headers = ['ID', 'Name', 'Status', 'Version', 'Sandbox', 'IMS Org ID',
       'Created By', 'Created By ID', 'Created At',
       'Last Modified By', 'Last Modified By ID', 'Last Modified At',
       'Days Stale'];
-    const rows = filtered.map((j) => [
-      j.id, j.name, j.status, j.version, j.sandboxName, j.imsOrgId,
+    const rows = data.map((j) => [
+      j.id, j.name, displaySt(j.status), j.version, j.sandboxName, j.imsOrgId,
       j.metadata?.createdBy, j.metadata?.createdById, j.metadata?.createdAt,
       j.metadata?.lastModifiedBy, j.metadata?.lastModifiedById, j.metadata?.lastModifiedAt,
       daysAgo(j.metadata?.lastModifiedAt),
     ].map(csvQ).join(','));
-    const csv = [headers.map(csvQ).join(','), ...rows].join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    return [headers.map(csvQ).join(','), ...rows].join('\r\n');
+  }
+
+  function triggerDownload(csvStr, filename) {
+    const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `journey-cleanup-${todayIso()}.csv`;
+    a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // Download filtered results (current view)
+  function exportCsv() {
+    triggerDownload(buildCsv(filtered), `journey-cleanup-filtered-${todayIso()}.csv`);
     // eslint-disable-next-line no-console
-    console.log(`[JCC] CSV exported — ${filtered.length} rows`);
+    console.log(`[JCC] CSV exported (filtered) — ${filtered.length} rows`);
+  }
+
+  // Download ALL stale journeys regardless of current filters
+  function exportAllCsv() {
+    const co = cutoff();
+    const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+    triggerDownload(buildCsv(allStale), `journey-cleanup-all-${todayIso()}.csv`);
+    // eslint-disable-next-line no-console
+    console.log(`[JCC] CSV exported (all stale) — ${allStale.length} rows`);
   }
 
   function renderPag(tot, pages) {
@@ -608,6 +631,8 @@ function showDashboard(root, cfg) {
 
   const csvBtn = dash.querySelector('#jr-csv');
   csvBtn.addEventListener('click', exportCsv);
+  const csvAllBtn = dash.querySelector('#jr-csv-all');
+  csvAllBtn.addEventListener('click', exportAllCsv);
 
   reconfigBtn.addEventListener('click', () => {
     showModal((newCfg) => { showDashboard(root, newCfg); });
