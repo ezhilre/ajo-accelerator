@@ -59,9 +59,10 @@ function isoDate(d) {
 }
 
 async function apiGet(cfg, page, afterDate) {
-  // Filter format (must be URL-encoded):
-  //   status=draft,live,failed,stopped,closed&metadata.lastModifiedAt>2026-02-26
-  const rawFilter = `status=draft,live,failed,stopped,closed&metadata.lastModifiedAt>${afterDate}`;
+  // Exact filter format matching the working curl:
+  //   status=draft,live&metadata.lastModifiedAt>2026-02-26
+  // encodeURIComponent encodes = → %3D, , → %2C, & → %26, > → %3E
+  const rawFilter = `status=draft,live&metadata.lastModifiedAt>${afterDate}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
   const res = await fetch(url, {
     headers: {
@@ -78,35 +79,43 @@ async function apiGet(cfg, page, afterDate) {
   return res.json();
 }
 
-// Strategy: fetch page=0,1,2… with a fixed afterDate window.
-// The API seems to cap results; we scroll back in time by 30-day windows
-// until we find nothing new or have gone back far enough.
+// Strategy: fetch pages 0,1,2… for a given afterDate window.
+// Roll the window back 30 days at a time until no results or 2-year limit.
+// Abort entirely on any HTTP error (no retry, no next window).
 async function fetchAll(cfg, onChunk, onErr, onDone) {
   const all = [];
   const seen = new Set();
   let chunkIdx = 0;
+  let fatalError = false;
 
-  // We fetch in 30-day windows rolling back from today up to 2 years
+  // Rolling 30-day windows back from today up to 2 years
   const today = new Date();
   const earliest = new Date(today);
-  earliest.setFullYear(earliest.getFullYear() - 2); // 2 years back
+  earliest.setFullYear(earliest.getFullYear() - 2);
 
   let windowEnd = new Date(today);
   let windowStart = new Date(today);
   windowStart.setDate(windowStart.getDate() - 30);
 
-  let go = true;
-  while (go && windowStart >= earliest) {
+  while (!fatalError && windowStart >= earliest) {
     const afterDate = isoDate(windowStart);
     let page = 0;
     let pageGo = true;
 
-    while (pageGo) {
+    while (pageGo && !fatalError) {
       let data;
-      try { data = await apiGet(cfg, page, afterDate); } catch (e) { onErr(e); pageGo = false; break; }
-      const items = (data.results || data.items || data.content || []).filter((j) => {
+      try {
+        data = await apiGet(cfg, page, afterDate);
+      } catch (e) {
+        // Stop all further API calls on any error (incl. 500)
+        fatalError = true;
+        onErr(e);
+        break;
+      }
+
+      const raw = data.results || data.items || data.content || [];
+      const items = raw.filter((j) => {
         if (seen.has(j.id)) return false;
-        // only keep items whose lastModifiedAt is within our window
         const t = new Date(j.metadata?.lastModifiedAt || 0).getTime();
         return t > windowStart.getTime() && t <= windowEnd.getTime();
       });
@@ -118,9 +127,8 @@ async function fetchAll(cfg, onChunk, onErr, onDone) {
         chunkIdx += 1;
       }
 
-      // If full page returned, try next page in same window
-      const total = (data.results || data.items || data.content || []).length;
-      if (total < PAGE_SIZE) { pageGo = false; } else { page += 1; }
+      // Stop paging if we got fewer than a full page
+      if (raw.length < PAGE_SIZE) { pageGo = false; } else { page += 1; }
     }
 
     // Slide window back 30 days
