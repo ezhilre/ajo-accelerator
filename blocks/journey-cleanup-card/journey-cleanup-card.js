@@ -347,7 +347,7 @@ function showDashboard(root, cfg) {
     + '  </div>'
     + '</div>'
     + '<div class="jcc-summary">'
-    + '  <div class="jcc-sc jcc-sc-total"><span class="jcc-sn" id="st">&#x2014;</span><span class="jcc-sl">Total Stale</span></div>'
+    + '  <div class="jcc-sc jcc-sc-total"><span class="jcc-sn" id="st">&#x2014;</span><span class="jcc-sl">Total</span></div>'
     + '  <div class="jcc-sc jcc-sc-live"><span class="jcc-sn" id="sl">&#x2014;</span><span class="jcc-sl">Live</span></div>'
     + '  <div class="jcc-sc jcc-sc-draft"><span class="jcc-sn" id="sd">&#x2014;</span><span class="jcc-sl">Draft</span></div>'
     + '  <div class="jcc-sc jcc-sc-failed"><span class="jcc-sn" id="sf">&#x2014;</span><span class="jcc-sl">Failed</span></div>'
