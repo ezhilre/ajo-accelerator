@@ -199,20 +199,20 @@ function showModal(onOk) {
     + '  <div class="jcc-modal-row">'
     + '    <div class="jcc-field">'
     + '      <label class="jcc-label" for="jcc-m-apikey">API Key (x-api-key) <span class="jcc-req">*</span></label>'
-    + `      <input id="jcc-m-apikey" name="apiKey" type="text" value="${esc(saved.apiKey || '')}" placeholder="e.g. e5b407a4..." />`
+    + `      <input id="jcc-m-apikey" name="apiKey" type="text" value="${esc(saved.apiKey || '')}" placeholder="Your API Key" />`
     + '    </div>'
     + '    <div class="jcc-field">'
     + '      <label class="jcc-label" for="jcc-m-sandbox">Sandbox Name <span class="jcc-req">*</span></label>'
-    + `      <input id="jcc-m-sandbox" name="sandbox" type="text" value="${esc(saved.sandbox || '')}" placeholder="e.g. xlg-dev" />`
+    + `      <input id="jcc-m-sandbox" name="sandbox" type="text" value="${esc(saved.sandbox || '')}" placeholder="Sandbox name" />`
     + '    </div>'
     + '  </div>'
     + '  <div class="jcc-field">'
     + '    <label class="jcc-label" for="jcc-m-org">IMS Org ID <span class="jcc-req">*</span></label>'
-    + `    <input id="jcc-m-org" name="orgId" type="text" value="${esc(saved.orgId || '')}" placeholder="e.g. 9E1005A5...@AdobeOrg" />`
+    + `    <input id="jcc-m-org" name="orgId" type="text" value="${esc(saved.orgId || '')}" placeholder="IMS Org ID" />`
     + '  </div>'
     + '  <div class="jcc-field">'
     + '    <label class="jcc-label" for="jcc-m-tenant">Tenant ID <span class="jcc-req">*</span></label>'
-    + `    <input id="jcc-m-tenant" name="tenantId" type="text" value="${esc(saved.tenantId || '')}" placeholder="e.g. yourtenantid" />`
+    + `    <input id="jcc-m-tenant" name="tenantId" type="text" value="${esc(saved.tenantId || '')}" placeholder="Tenant ID" />`
     + '    <span class="jcc-field-hint">Your Adobe Experience Platform tenant identifier</span>'
     + '  </div>'
     + '  <div class="jcc-modal-error" id="jcc-modal-err" style="display:none"></div>'
