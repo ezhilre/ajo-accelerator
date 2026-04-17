@@ -577,6 +577,39 @@ body.jcc-no-scroll {
 .jcc-cp { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jcc-cc { text-align: center; }
 
+/* Go column */
+.jcc-cgo {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.jcc-go-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #1473e6;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, transform 0.1s;
+  font-family: inherit;
+}
+
+.jcc-go-btn:hover {
+  background: #0d66d0;
+  transform: translateY(-1px);
+  text-decoration: none;
+  color: #fff;
+}
+
+.jcc-go-btn:active {
+  transform: translateY(0);
+}
+
 /* status badges */
 .jcc-st {
   display: inline-block;

@@ -379,7 +379,7 @@ function showDashboard(root, cfg) {
     + '    <thead><tr>'
     + '      <th></th><th>Name</th><th>Status</th>'
     + '      <th>Created By</th><th>Created At</th>'
-    + '      <th>Stale</th>'
+    + '      <th>Stale</th><th>Go</th>'
     + '    </tr></thead>'
     + '    <tbody id="jcc-tb"></tbody>'
     + '  </table>'
@@ -526,6 +526,7 @@ function showDashboard(root, cfg) {
         // Display "Live" in UI for what the API returns as "deployed"
         const displayStatus = (j.status || '').toLowerCase() === 'deployed' ? 'Live' : (j.status || '—');
         const displaySc = (j.status || '').toLowerCase() === 'deployed' ? 'live' : sc;
+        const journeyUrl = `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(j.id)}`;
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
@@ -533,6 +534,7 @@ function showDashboard(root, cfg) {
           `<td class="jcc-cp" title="${esc(j.metadata?.createdById || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cd" title="${esc(j.metadata?.createdAt || '')}">${fmtDate(j.metadata?.createdAt)}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
+          `<td class="jcc-cgo"><a class="jcc-go-btn" href="${esc(journeyUrl)}" target="_blank" rel="noopener noreferrer" title="Open journey in AJO">&#x1F517; Go</a></td>`,
         ].join('');
         tb.appendChild(tr);
         tr.querySelector('.jcc-tog').addEventListener('click', () => {
