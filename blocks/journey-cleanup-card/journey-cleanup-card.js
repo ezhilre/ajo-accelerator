@@ -773,6 +773,23 @@ function showDashboard(root, cfg) {
   startLoad();
 }
 
+// ─── pre-dashboard placeholder (no credentials yet) ──────────────────────────
+
+function showPreDash(root) {
+  root.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'jcc-pre-dash';
+  wrap.innerHTML = ''
+    + '<span class="jcc-pre-icon">&#x1F9F9;</span>'
+    + '<p style="font-size:1.1rem;font-weight:600;color:#2c2c2c;margin:0">Journey Cleanup Dashboard</p>'
+    + '<p style="color:#6e6e6e;margin:0.25rem 0 1rem;font-size:0.9rem">No credentials configured. Open the config window to get started.</p>'
+    + '<button class="jcc-btn-primary jcc-pre-open-cfg">&#x2699;&#xFE0F; Configure Credentials</button>';
+  root.appendChild(wrap);
+  wrap.querySelector('.jcc-pre-open-cfg').addEventListener('click', () => {
+    showModal((newCfg) => showDashboard(root, newCfg));
+  });
+}
+
 // ─── app entry ────────────────────────────────────────────────────────────────
 
 function initApp(root) {
@@ -785,8 +802,7 @@ function initApp(root) {
   if (cfg) {
     showDashboard(root, cfg);
   } else {
-    // render empty dashboard shell behind modal so it is visible when modal closes
-    root.innerHTML = '<div class="jcc-pre-dash"><span class="jcc-pre-icon">&#x1F9F9;</span><p>Loading credentials&hellip;</p></div>';
+    showPreDash(root);
     showModal((newCfg) => showDashboard(root, newCfg));
   }
 }
