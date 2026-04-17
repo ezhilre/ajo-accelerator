@@ -59,10 +59,10 @@ function todayIso() {
 }
 
 // Single page fetch.
-// Filter: status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<TODAY
-// Note: AJO API uses "deployed" for what the UI calls "Live"
+// Filter: status=draft,failed,stopped,closed&metadata.lastModifiedAt<TODAY
+// Excludes "deployed" (Live) journeys intentionally.
 async function apiGet(cfg, page, signal) {
-  const rawFilter = `status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
+  const rawFilter = `status=draft,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
   // eslint-disable-next-line no-console
   console.log(`[JCC] GET page=${page} | filter: ${rawFilter} | url: ${url}`);
@@ -348,7 +348,6 @@ function showDashboard(root, cfg) {
     + '</div>'
     + '<div class="jcc-summary">'
     + '  <div class="jcc-sc jcc-sc-total"><span class="jcc-sn" id="st">&#x2014;</span><span class="jcc-sl">Total</span></div>'
-    + '  <div class="jcc-sc jcc-sc-live"><span class="jcc-sn" id="sl">&#x2014;</span><span class="jcc-sl">Live</span></div>'
     + '  <div class="jcc-sc jcc-sc-draft"><span class="jcc-sn" id="sd">&#x2014;</span><span class="jcc-sl">Draft</span></div>'
     + '  <div class="jcc-sc jcc-sc-failed"><span class="jcc-sn" id="sf">&#x2014;</span><span class="jcc-sl">Failed</span></div>'
     + '  <div class="jcc-sc jcc-sc-closed"><span class="jcc-sn" id="sc">&#x2014;</span><span class="jcc-sl">Closed/Stopped</span></div>'
@@ -383,7 +382,6 @@ function showDashboard(root, cfg) {
     + '      <label for="jcc-sf">Status</label>'
     + '      <select id="jcc-sf" class="jcc-sel">'
     + '        <option value="all">All</option>'
-    + '        <option value="live">Live</option>'
     + '        <option value="draft">Draft</option>'
     + '        <option value="failed">Failed</option>'
     + '        <option value="closed">Closed</option>'
@@ -447,11 +445,11 @@ function showDashboard(root, cfg) {
 
   function updSummary() {
     const co = cutoff();
-    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
-    // API returns "deployed" for Live journeys
+    // Exclude deployed (Live) journeys from all counts
+    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co
+      && (j.status || '').toLowerCase() !== 'deployed');
     const cnt = (s) => stale.filter((j) => (j.status || '').toLowerCase() === s).length;
     dash.querySelector('#st').textContent = stale.length;
-    dash.querySelector('#sl').textContent = cnt('deployed');
     dash.querySelector('#sd').textContent = cnt('draft');
     dash.querySelector('#sf').textContent = cnt('failed');
     dash.querySelector('#sc').textContent = cnt('closed') + cnt('stopped');
@@ -467,7 +465,8 @@ function showDashboard(root, cfg) {
   // Rebuild the "Created By" dropdown from current data
   function updCreatedByFilter() {
     const co = cutoff();
-    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co
+      && (j.status || '').toLowerCase() !== 'deployed');
     const names = [...new Set(stale.map((j) => j.metadata?.createdBy || '').filter(Boolean))].sort();
     const prev = cbEl.value;
     cbEl.innerHTML = '<option value="all">All Owners</option>'
@@ -479,9 +478,9 @@ function showDashboard(root, cfg) {
     const q = nameQ.toLowerCase();
     filtered = all.filter((j) => {
       if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
-      // UI shows "live" but API returns "deployed" — map filter value
-      const apiStatus = statusQ === 'live' ? 'deployed' : statusQ;
-      if (apiStatus !== 'all' && (j.status || '').toLowerCase() !== apiStatus) return false;
+      // Always exclude live (deployed) journeys
+      if ((j.status || '').toLowerCase() === 'deployed') return false;
+      if (statusQ !== 'all' && (j.status || '').toLowerCase() !== statusQ) return false;
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (bucketQ !== 'all' && getBucket(daysAgo(j.metadata?.lastModifiedAt)) !== bucketQ) return false;
       if (q) {
@@ -568,9 +567,8 @@ function showDashboard(root, cfg) {
         const isExp = expanded === j.id;
         const tr = document.createElement('tr');
         tr.className = `jcc-row${isExp ? ' jcc-row-exp' : ''}`;
-        // Display "Live" in UI for what the API returns as "deployed"
-        const displayStatus = (j.status || '').toLowerCase() === 'deployed' ? 'Live' : (j.status || '—');
-        const displaySc = (j.status || '').toLowerCase() === 'deployed' ? 'live' : sc;
+        const displayStatus = j.status || '—';
+        const displaySc = sc;
         const journeyUrl = `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(j.id)}`;
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
@@ -595,7 +593,7 @@ function showDashboard(root, cfg) {
   // ── CSV export — downloads ALL stale journeys (not just current page/filter) ──
   function buildCsv(data) {
     const csvQ = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const displaySt = (s) => ((s || '').toLowerCase() === 'deployed' ? 'Live' : (s || ''));
+    const displaySt = (s) => (s || '');
     const headers = ['ID', 'Name', 'Status', 'Version', 'Sandbox', 'IMS Org ID',
       'Created By', 'Created By ID', 'Created At',
       'Last Modified By', 'Last Modified By ID', 'Last Modified At',
@@ -626,10 +624,11 @@ function showDashboard(root, cfg) {
     console.log(`[JCC] CSV exported (filtered) — ${filtered.length} rows`);
   }
 
-  // Download ALL stale journeys regardless of current filters
+  // Download ALL stale journeys regardless of current filters (excludes Live/deployed)
   function exportAllCsv() {
     const co = cutoff();
-    const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+    const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co
+      && (j.status || '').toLowerCase() !== 'deployed');
     triggerDownload(buildCsv(allStale), `journey-cleanup-all-${todayIso()}.csv`);
     // eslint-disable-next-line no-console
     console.log(`[JCC] CSV exported (all stale) — ${allStale.length} rows`);
