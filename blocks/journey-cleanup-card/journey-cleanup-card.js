@@ -293,6 +293,14 @@ function readCfg(block) {
 
 // ─── dashboard ────────────────────────────────────────────────────────────────
 
+// Returns the bucket key for a given number of days stale
+function getBucket(days) {
+  if (days <= 30) return '0-30';
+  if (days <= 60) return '31-60';
+  if (days <= 90) return '61-90';
+  return '90+';
+}
+
 function showDashboard(root, cfg) {
   let all = [];
   let filtered = [];
@@ -300,6 +308,7 @@ function showDashboard(root, cfg) {
   let nameQ = '';
   let statusQ = 'all';
   let createdByQ = 'all';
+  let bucketQ = 'all';
   let sortK = 'lastModifiedAt';
   let sortD = 'asc';
   let loading = true;
@@ -331,6 +340,20 @@ function showDashboard(root, cfg) {
     + '  <div class="jcc-sc jcc-sc-draft"><span class="jcc-sn" id="sd">&#x2014;</span><span class="jcc-sl">Draft</span></div>'
     + '  <div class="jcc-sc jcc-sc-failed"><span class="jcc-sn" id="sf">&#x2014;</span><span class="jcc-sl">Failed</span></div>'
     + '  <div class="jcc-sc jcc-sc-closed"><span class="jcc-sn" id="sc">&#x2014;</span><span class="jcc-sl">Closed/Stopped</span></div>'
+    + '</div>'
+    + '<div class="jcc-buckets">'
+    + '  <span class="jcc-buckets-lbl">Age Buckets:</span>'
+    + '  <button class="jcc-bucket-btn jcc-bucket-all jcc-bucket-active" data-bucket="all">All</button>'
+    + '  <button class="jcc-bucket-btn jcc-bucket-0-30" data-bucket="0-30">0&#x2013;30 days</button>'
+    + '  <button class="jcc-bucket-btn jcc-bucket-31-60" data-bucket="31-60">31&#x2013;60 days</button>'
+    + '  <button class="jcc-bucket-btn jcc-bucket-61-90" data-bucket="61-90">61&#x2013;90 days</button>'
+    + '  <button class="jcc-bucket-btn jcc-bucket-90plus" data-bucket="90+">90+ days</button>'
+    + '  <span class="jcc-bucket-counts">'
+    + '    <span class="jcc-bc-item jcc-bc-0-30">0&#x2013;30: <strong id="bk-0-30">&#x2014;</strong></span>'
+    + '    <span class="jcc-bc-item jcc-bc-31-60">31&#x2013;60: <strong id="bk-31-60">&#x2014;</strong></span>'
+    + '    <span class="jcc-bc-item jcc-bc-61-90">61&#x2013;90: <strong id="bk-61-90">&#x2014;</strong></span>'
+    + '    <span class="jcc-bc-item jcc-bc-90plus">90+: <strong id="bk-90plus">&#x2014;</strong></span>'
+    + '  </span>'
     + '</div>'
     + '<div class="jcc-prog-wrap" id="jcc-pw">'
     + '  <div class="jcc-prog-track"><div class="jcc-prog-fill" id="jcc-pf"></div></div>'
@@ -418,6 +441,13 @@ function showDashboard(root, cfg) {
     dash.querySelector('#sd').textContent = cnt('draft');
     dash.querySelector('#sf').textContent = cnt('failed');
     dash.querySelector('#sc').textContent = cnt('closed') + cnt('stopped');
+
+    // Update bucket counts
+    const bCnt = (b) => stale.filter((j) => getBucket(daysAgo(j.metadata?.lastModifiedAt)) === b).length;
+    dash.querySelector('#bk-0-30').textContent = bCnt('0-30');
+    dash.querySelector('#bk-31-60').textContent = bCnt('31-60');
+    dash.querySelector('#bk-61-90').textContent = bCnt('61-90');
+    dash.querySelector('#bk-90plus').textContent = bCnt('90+');
   }
 
   // Rebuild the "Created By" dropdown from current data
@@ -439,6 +469,7 @@ function showDashboard(root, cfg) {
       const apiStatus = statusQ === 'live' ? 'deployed' : statusQ;
       if (apiStatus !== 'all' && (j.status || '').toLowerCase() !== apiStatus) return false;
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
+      if (bucketQ !== 'all' && getBucket(daysAgo(j.metadata?.lastModifiedAt)) !== bucketQ) return false;
       if (q) {
         const hay = [j.name, j.id, j.status, j.sandboxName, j.version,
           j.metadata?.createdBy, j.metadata?.lastModifiedBy].join(' ').toLowerCase();
@@ -642,6 +673,17 @@ function showDashboard(root, cfg) {
   sfEl.addEventListener('change', () => { statusQ = sfEl.value; applyF(); });
   cbEl.addEventListener('change', () => { createdByQ = cbEl.value; applyF(); });
   skEl.addEventListener('change', () => { sortK = skEl.value; applyF(); });
+
+  // Bucket buttons
+  dash.querySelectorAll('.jcc-bucket-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      bucketQ = btn.dataset.bucket;
+      dash.querySelectorAll('.jcc-bucket-btn').forEach((b) => b.classList.remove('jcc-bucket-active'));
+      btn.classList.add('jcc-bucket-active');
+      applyF();
+    });
+  });
+
   sdBtn.addEventListener('click', () => {
     sortD = sortD === 'asc' ? 'desc' : 'asc';
     sdBtn.textContent = sortD === 'asc' ? '\u2191 Oldest' : '\u2193 Newest';

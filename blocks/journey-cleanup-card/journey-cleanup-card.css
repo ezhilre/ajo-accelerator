@@ -358,6 +358,119 @@ body.jcc-no-scroll {
 .jcc-sc-closed { border-top: 4px solid #888; }
 .jcc-sc-closed .jcc-sn { color: #888; }
 
+/* ── age buckets ─────────────────────────────────────────────────────────── */
+
+.jcc-buckets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1.1rem;
+  background: #f8f9fb;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+}
+
+.jcc-buckets-lbl {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.jcc-bucket-btn {
+  border: 2px solid transparent;
+  border-radius: 20px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  white-space: nowrap;
+  background: #fff;
+  color: #555;
+  border-color: #d0d0d0;
+}
+
+.jcc-bucket-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* All button */
+.jcc-bucket-all { border-color: #aaa; color: #444; }
+.jcc-bucket-all:hover { background: #f0f0f0; }
+.jcc-bucket-all.jcc-bucket-active {
+  background: #555;
+  border-color: #555;
+  color: #fff;
+}
+
+/* 0–30 days — green (fresh stale) */
+.jcc-bucket-0-30 { border-color: #2da44e; color: #1a6636; }
+.jcc-bucket-0-30:hover { background: #d4f5e2; }
+.jcc-bucket-0-30.jcc-bucket-active {
+  background: #2da44e;
+  border-color: #2da44e;
+  color: #fff;
+}
+
+/* 31–60 days — amber */
+.jcc-bucket-31-60 { border-color: #f7a325; color: #7a5200; }
+.jcc-bucket-31-60:hover { background: #fff3cd; }
+.jcc-bucket-31-60.jcc-bucket-active {
+  background: #f7a325;
+  border-color: #f7a325;
+  color: #fff;
+}
+
+/* 61–90 days — orange-red (warn) */
+.jcc-bucket-61-90 { border-color: #e07b00; color: #7a3800; }
+.jcc-bucket-61-90:hover { background: #ffe8c0; }
+.jcc-bucket-61-90.jcc-bucket-active {
+  background: #e07b00;
+  border-color: #e07b00;
+  color: #fff;
+}
+
+/* 90+ days — red (critical) */
+.jcc-bucket-90plus { border-color: #d7373f; color: #a61c1c; }
+.jcc-bucket-90plus:hover { background: #fde8e8; }
+.jcc-bucket-90plus.jcc-bucket-active {
+  background: #d7373f;
+  border-color: #d7373f;
+  color: #fff;
+}
+
+/* count pills */
+.jcc-bucket-counts {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.jcc-bc-item {
+  font-size: 0.78rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.jcc-bc-item strong {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.jcc-bc-0-30 strong { color: #2da44e; }
+.jcc-bc-31-60 strong { color: #c97b00; }
+.jcc-bc-61-90 strong { color: #e07b00; }
+.jcc-bc-90plus strong { color: #d7373f; }
+
 /* progress bar */
 .jcc-prog-wrap {
   display: flex;
