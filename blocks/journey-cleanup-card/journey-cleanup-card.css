@@ -505,6 +505,37 @@ body.jcc-no-scroll {
   min-width: 240px;
 }
 
+/* stop button — sits inline with the progress bar */
+.jcc-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #fff;
+  color: #d7373f;
+  border: 1.5px solid #d7373f;
+  border-radius: 6px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+.jcc-stop-btn:hover {
+  background: #d7373f;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(215, 55, 63, 0.3);
+}
+
+.jcc-stop-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
 /* controls */
 .jcc-controls { margin-bottom: 1rem; }
 

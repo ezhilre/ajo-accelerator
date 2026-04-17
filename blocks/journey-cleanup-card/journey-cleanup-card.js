@@ -61,12 +61,13 @@ function todayIso() {
 // Single page fetch.
 // Filter: status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<TODAY
 // Note: AJO API uses "deployed" for what the UI calls "Live"
-async function apiGet(cfg, page) {
+async function apiGet(cfg, page, signal) {
   const rawFilter = `status=draft,deployed,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(rawFilter)}`;
   // eslint-disable-next-line no-console
   console.log(`[JCC] GET page=${page} | filter: ${rawFilter} | url: ${url}`);
   const res = await fetch(url, {
+    signal,
     headers: {
       Authorization: `Bearer ${cfg.token}`,
       'x-api-key': cfg.apiKey,
@@ -89,7 +90,12 @@ async function apiGet(cfg, page) {
 // Fetch all pages sequentially.
 // Page 0 reveals pagination.totalCount → compute total pages → fetch 1…N.
 // Stops immediately on any HTTP error.
-async function fetchAll(cfg, onChunk, onErr, onDone) {
+// Returns the AbortController so callers can cancel mid-flight.
+function fetchAll(cfg, onChunk, onErr, onDone) {
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  (async () => {
   const all = [];
   // eslint-disable-next-line no-console
   console.log('[JCC] fetchAll started');
@@ -97,8 +103,9 @@ async function fetchAll(cfg, onChunk, onErr, onDone) {
   // ── page 0 (bootstrap) ──────────────────────────────────────────────────
   let data0;
   try {
-    data0 = await apiGet(cfg, 0);
+    data0 = await apiGet(cfg, 0, signal);
   } catch (e) {
+    if (e.name === 'AbortError') { onDone([...all]); return; }
     onErr(e);
     onDone([]);
     return;
@@ -124,10 +131,12 @@ async function fetchAll(cfg, onChunk, onErr, onDone) {
 
   // ── pages 1 … totalPages-1 ──────────────────────────────────────────────
   for (let page = 1; page < totalPages; page += 1) {
+    if (signal.aborted) break;
     let data;
     try {
-      data = await apiGet(cfg, page);
+      data = await apiGet(cfg, page, signal);
     } catch (e) {
+      if (e.name === 'AbortError') break;
       // eslint-disable-next-line no-console
       console.error(`[JCC] Fatal error at page=${page} — aborting remaining ${totalPages - page} pages`);
       onErr(e);
@@ -150,6 +159,9 @@ async function fetchAll(cfg, onChunk, onErr, onDone) {
   // eslint-disable-next-line no-console
   console.log(`[JCC] fetchAll complete — ${all.length} total journeys`);
   onDone([...all]);
+  })();
+
+  return controller;
 }
 
 // ─── modal overlay credential form ───────────────────────────────────────────
@@ -358,6 +370,7 @@ function showDashboard(root, cfg) {
     + '<div class="jcc-prog-wrap" id="jcc-pw">'
     + '  <div class="jcc-prog-track"><div class="jcc-prog-fill" id="jcc-pf"></div></div>'
     + '  <span class="jcc-prog-lbl" id="jcc-pl">Starting...</span>'
+    + '  <button class="jcc-stop-btn" id="jcc-stop" title="Stop fetching">&#x23F9; Stop</button>'
     + '</div>'
     + '<div class="jcc-controls">'
     + '  <div class="jcc-search-wrap">'
@@ -417,6 +430,7 @@ function showDashboard(root, cfg) {
   const pw = dash.querySelector('#jcc-pw');
   const pf = dash.querySelector('#jcc-pf');
   const pl = dash.querySelector('#jcc-pl');
+  const stopBtn = dash.querySelector('#jcc-stop');
   const tb = dash.querySelector('#jcc-tb');
   const emEl = dash.querySelector('#jcc-empty');
   const sqEl = dash.querySelector('#jcc-sq');
@@ -662,6 +676,10 @@ function showDashboard(root, cfg) {
   function doneP() { pw.classList.add('jcc-pd'); setTimeout(() => { pw.style.display = 'none'; }, 600); }
   function showErr(msg) { errEl.style.display = 'block'; errEl.innerHTML = `\u26A0 ${esc(msg)}`; }
 
+  function showStopBtn(visible) {
+    stopBtn.style.display = visible ? 'inline-flex' : 'none';
+  }
+
   // controls
   let st2;
   sqEl.addEventListener('input', () => {
@@ -707,10 +725,29 @@ function showDashboard(root, cfg) {
     updSummary(); applyF(); startLoad();
   });
 
+  let fetchController = null;
+
+  stopBtn.addEventListener('click', () => {
+    if (fetchController) {
+      fetchController.abort();
+      fetchController = null;
+      showStopBtn(false);
+      loading = false;
+      refBtn.disabled = false;
+      setP(pf.style.width ? parseFloat(pf.style.width) : 0, `\u23F9 Stopped \u2014 ${all.length} journeys loaded`);
+      pw.classList.remove('jcc-pd');
+      updSummary(); updCreatedByFilter(); applyF();
+      setTimeout(() => { pw.style.display = 'none'; }, 2000);
+      // eslint-disable-next-line no-console
+      console.log(`[JCC] Fetch stopped by user — ${all.length} journeys loaded so far`);
+    }
+  });
+
   function startLoad() {
     let totalPages = 0;
+    showStopBtn(true);
     setP(5, 'Fetching page 1\u2026');
-    fetchAll(
+    fetchController = fetchAll(
       cfg,
       (chunk, cumul, pageNum) => {
         if (pageNum === 0 && chunk.length > 0) totalPages = totalPages || 1;
@@ -724,7 +761,9 @@ function showDashboard(root, cfg) {
       },
       (err) => { showErr(`Fetch error: ${err.message}`); },
       (final) => {
+        fetchController = null;
         all = final; loading = false; refBtn.disabled = false;
+        showStopBtn(false);
         setP(100, `Done \u2014 ${final.length} journeys loaded`);
         updSummary(); updCreatedByFilter(); applyF(); doneP();
       },
