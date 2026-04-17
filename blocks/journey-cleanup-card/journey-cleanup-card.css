@@ -113,6 +113,19 @@ body.jcc-no-scroll {
   flex: 1;
 }
 
+.jcc-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.jcc-modal-cancel {
+  padding: 0.7rem 1.25rem;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
 .jcc-modal-submit {
   padding: 0.7rem 1.5rem;
   font-size: 0.95rem;
@@ -723,6 +736,8 @@ body.jcc-no-scroll {
   .jcc-modal-box { padding: 1.25rem; }
   .jcc-modal-row { grid-template-columns: 1fr; }
   .jcc-modal-footer { flex-direction: column; align-items: stretch; }
+  .jcc-modal-actions { flex-direction: column; width: 100%; }
+  .jcc-modal-cancel,
   .jcc-modal-submit { width: 100%; text-align: center; padding: 0.75rem; }
   .jcc-dashboard { padding: 1rem 0.75rem; }
   .jcc-header { flex-direction: column; align-items: flex-start; }

@@ -198,10 +198,18 @@ function showModal(onOk) {
     + '    <label class="jcc-label" for="jcc-m-org">IMS Org ID <span class="jcc-req">*</span></label>'
     + `    <input id="jcc-m-org" name="orgId" type="text" value="${esc(saved.orgId || '')}" placeholder="e.g. 9E1005A5...@AdobeOrg" />`
     + '  </div>'
+    + '  <div class="jcc-field">'
+    + '    <label class="jcc-label" for="jcc-m-tenant">Tenant ID <span class="jcc-req">*</span></label>'
+    + `    <input id="jcc-m-tenant" name="tenantId" type="text" value="${esc(saved.tenantId || '')}" placeholder="e.g. yourtenantid" />`
+    + '    <span class="jcc-field-hint">Your Adobe Experience Platform tenant identifier</span>'
+    + '  </div>'
     + '  <div class="jcc-modal-error" id="jcc-modal-err" style="display:none"></div>'
     + '  <div class="jcc-modal-footer">'
     + '    <p class="jcc-modal-note">&#x1F512; Stored in sessionStorage only &mdash; never persisted or sent anywhere except Adobe APIs.</p>'
-    + '    <button type="submit" class="jcc-btn-primary jcc-modal-submit">&#x1F680; Load Journeys</button>'
+    + '    <div class="jcc-modal-actions">'
+    + '      <button type="button" class="jcc-btn-secondary jcc-modal-cancel">&#x2715; Cancel</button>'
+    + '      <button type="submit" class="jcc-btn-primary jcc-modal-submit">&#x1F680; Load Journeys</button>'
+    + '    </div>'
     + '  </div>'
     + '</form>';
 
@@ -226,9 +234,10 @@ function showModal(onOk) {
       apiKey: (fd.get('apiKey') || '').trim(),
       orgId: (fd.get('orgId') || '').trim(),
       sandbox: (fd.get('sandbox') || '').trim(),
+      tenantId: (fd.get('tenantId') || '').trim(),
     };
     const errEl = box.querySelector('#jcc-modal-err');
-    const missing = ['token', 'apiKey', 'orgId', 'sandbox'].filter((k) => !cfg[k]);
+    const missing = ['token', 'apiKey', 'orgId', 'sandbox', 'tenantId'].filter((k) => !cfg[k]);
     if (missing.length) {
       errEl.style.display = 'flex';
       errEl.textContent = `\u26A0 Please fill in: ${missing.join(', ')}`;
@@ -239,6 +248,14 @@ function showModal(onOk) {
     closeModal();
     onOk(cfg);
   });
+
+  // cancel button — close modal without saving
+  const cancelBtn = box.querySelector('.jcc-modal-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      closeModal();
+    });
+  }
 
   // trap focus inside modal
   overlay.addEventListener('keydown', (e) => {
