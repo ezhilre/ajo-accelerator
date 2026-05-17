@@ -514,7 +514,7 @@ app.listen(PORT, () => {
   console.log(`  \x1b[36mPOST \x1b[0mhttp://localhost:${PORT}/score/batch    { journeys: [...] }`);
   console.log('');
   console.log('\x1b[2mOptional env vars:\x1b[0m');
-  console.log('  PORT=3001   OLLAMA_BASE=http://localhost:11434   MODEL=llama3');
-  console.log('  CONCURRENCY=1   LOG_FILE=./proxy.log   LOG_LEVEL=debug|info|warn|error');
+  console.log(`  PORT=${PORT}   OLLAMA_BASE=${OLLAMA_BASE}   MODEL=${MODEL}`);
+  console.log(`  CONCURRENCY=${LLM_CONCURRENCY}   LOG_FILE=./proxy.log   LOG_LEVEL=debug|info|warn|error`);
   console.log('');
 });
