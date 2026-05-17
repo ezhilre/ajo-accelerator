@@ -6,6 +6,7 @@ node_modules/*
 # ai-proxy local dependencies and runtime artifacts
 ai-proxy/node_modules/*
 ai-proxy/package-lock.json
+ai-proxy/llm-logs/
 
 helix-importer-ui
 .DS_Store

@@ -711,10 +711,21 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     }
   }
 
+  // ── Timing helpers ─────────────────────────────────────────────────────────
+
+  function fmtDur(ms) {
+    if (ms < 1000) return `${ms}ms`;
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60); const rs = s % 60;
+    return `${m}m ${rs < 10 ? '0' : ''}${rs}s`;
+  }
+
   // LLM analysis — runs after fetch completes (if aiEnabled)
   function startAI(targets) {
     if (aiRunning || !targets.length) return;
     aiRunning = true;
+    const aiStartMs = Date.now();
     aiStopBtn.style.display = 'inline-flex';
     aiCountsEl.style.display = 'flex';
     aiPf.style.width = '0%';
@@ -730,7 +741,16 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       onProgress({ done, total, retireCount, reviewCount, keepCount }) {
         const pct = Math.round((done / total) * 100);
         aiPf.style.width = `${pct}%`;
-        aiPl.textContent = `\uD83E\uDD16 LLM: ${done}/${total} journeys scored`;
+
+        // Timing
+        const elapsed = Date.now() - aiStartMs;
+        const avgMs = done > 0 ? Math.round(elapsed / done) : 0;
+        const remaining = done > 0 ? Math.round(((total - done) * avgMs)) : 0;
+        const timeParts = done > 0
+          ? ` \u00B7 avg ${fmtDur(avgMs)}/journey \u00B7 ~${fmtDur(remaining)} left \u00B7 elapsed ${fmtDur(elapsed)}`
+          : '';
+
+        aiPl.textContent = `\uD83E\uDD16 LLM: ${done}/${total} journeys scored${timeParts}`;
         dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retireCount} Retire`;
         dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${reviewCount} Review`;
         dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keepCount} Keep`;
@@ -738,7 +758,9 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       onComplete() {
         aiRunning = false;
         aiStopBtn.style.display = 'none';
-        aiPl.textContent = `\u2705 LLM done \u2014 ${targets.length} journeys scored`;
+        const totalElapsed = Date.now() - aiStartMs;
+        const avgMs = targets.length > 0 ? Math.round(totalElapsed / targets.length) : 0;
+        aiPl.textContent = `\u2705 LLM done \u2014 ${targets.length} journeys in ${fmtDur(totalElapsed)} \u00B7 avg ${fmtDur(avgMs)}/journey`;
         aiPf.style.width = '100%';
         render();
         // Auto-save full snapshot after LLM completes

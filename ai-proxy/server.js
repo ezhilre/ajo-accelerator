@@ -14,6 +14,7 @@
  *   CONCURRENCY=1                           (Ollama is single-threaded; keep at 1)
  *   LOG_FILE=./proxy.log                    (optional: also write logs to file as JSON-lines)
  *   LOG_LEVEL=info                          (debug|info|warn|error — default: info)
+ *   LLM_LOG_DIR=./llm-logs                 (optional: write one .log file per journey here)
  */
 
 require('dotenv').config();
@@ -31,6 +32,86 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const LOG_FILE = process.env.LOG_FILE || null;
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 const LOG_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL] ?? LOG_LEVELS.info;
+const LLM_LOG_DIR = process.env.LLM_LOG_DIR ? path.resolve(process.env.LLM_LOG_DIR) : null;
+
+// ── LLM per-journey file logger ───────────────────────────────────────────────
+
+function sanitizeName(name) {
+  return (name || 'unnamed')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/__+/g, '_')
+    .slice(0, 60);
+}
+
+function writeLlmFile(journey, prompt, raw, parsed, durationMs) {
+  if (!LLM_LOG_DIR) return;
+  try {
+    // Ensure directory exists
+    if (!fs.existsSync(LLM_LOG_DIR)) fs.mkdirSync(LLM_LOG_DIR, { recursive: true });
+
+    const id = journey.id || 'unknown';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeName = sanitizeName(journey.name);
+    const fileName = `${id}_${safeName}_${ts}.log`;
+    const filePath = path.join(LLM_LOG_DIR, fileName);
+
+    const SEP = '='.repeat(80);
+    const DIV = '-'.repeat(80);
+
+    const lines = [
+      SEP,
+      `Journey ID   : ${id}`,
+      `Journey Name : ${journey.name || '(unnamed)'}`,
+      `Status       : ${journey.status || 'unknown'}`,
+      `Days Stale   : ${journey._daysStale || 0}`,
+      `Model        : ${MODEL}`,
+      `Scored At    : ${new Date().toISOString()}`,
+      `Duration     : ${durationMs}ms`,
+      SEP,
+      'PROMPT:',
+      DIV,
+      prompt,
+      SEP,
+      'RAW RESPONSE:',
+      DIV,
+      raw || '(empty)',
+      SEP,
+      'PARSED RESULT:',
+      DIV,
+    ];
+
+    if (parsed) {
+      const fields = [
+        ['retirementScore', parsed.retirementScore],
+        ['retirementLabel', parsed.retirementLabel],
+        ['confidence',      parsed.confidence],
+        ['businessValue',   parsed.businessValue],
+        ['hasBusinessPurpose', parsed.hasBusinessPurpose],
+        ['journeyType',    parsed.journeyType],
+        ['useCaseSummary', parsed.useCaseSummary],
+        ['targetAudience', parsed.targetAudience],
+        ['businessPurpose', parsed.businessPurpose],
+        ['reasoning',      parsed.reasoning],
+        ['recommendation', parsed.recommendation],
+      ];
+      fields.forEach(([k, v]) => {
+        if (v !== undefined && v !== null) {
+          lines.push(`  ${k.padEnd(20)}: ${v}`);
+        }
+      });
+    } else {
+      lines.push('  (parse failed — see RAW RESPONSE above)');
+    }
+
+    lines.push(SEP);
+    lines.push('');
+
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+    log('debug', '📄 LLM log written', { id, file: fileName });
+  } catch (e) {
+    log('warn', '📄 LLM log write failed', { id: journey.id, error: e.message });
+  }
+}
 
 // ── Logger ────────────────────────────────────────────────────────────────────
 
@@ -362,6 +443,9 @@ app.post('/score', async (req, res) => {
 
     const totalMs = Date.now() - scoreStart;
 
+    // Write per-journey LLM log file
+    writeLlmFile(journey, prompt, raw, parsed, totalMs);
+
     if (!parsed) {
       log('error', '🎯 Score failed — non-JSON LLM response', { id, ms: `${totalMs}ms` });
       return res.status(422).json({
@@ -446,6 +530,9 @@ app.post('/score/batch', async (req, res) => {
       const parsed = extractJson(raw, id);
       const itemMs = Date.now() - itemStart;
 
+      // Write per-journey LLM log file
+      writeLlmFile(journey, prompt, raw, parsed, itemMs);
+
       if (parsed) {
         log('info', `📦 Batch [${i + 1}/${batch.length}] done`, {
           id,
@@ -507,6 +594,7 @@ app.listen(PORT, () => {
   log('info', 'Ollama backend', { url: OLLAMA_BASE, model: MODEL });
   log('info', 'Queue settings', { concurrency: LLM_CONCURRENCY, timeout_ms: REQUEST_TIMEOUT_MS });
   if (LOG_FILE) log('info', 'Log file', { path: path.resolve(LOG_FILE) });
+  if (LLM_LOG_DIR) log('info', 'LLM log dir', { path: LLM_LOG_DIR });
   console.log('');
   console.log('\x1b[2mEndpoints:\x1b[0m');
   console.log(`  \x1b[36mGET  \x1b[0mhttp://localhost:${PORT}/health`);
@@ -516,5 +604,6 @@ app.listen(PORT, () => {
   console.log('\x1b[2mOptional env vars:\x1b[0m');
   console.log(`  PORT=${PORT}   OLLAMA_BASE=${OLLAMA_BASE}   MODEL=${MODEL}`);
   console.log(`  CONCURRENCY=${LLM_CONCURRENCY}   LOG_FILE=./proxy.log   LOG_LEVEL=debug|info|warn|error`);
+  console.log(`  LLM_LOG_DIR=./llm-logs  (one .log file written per journey when set)`);
   console.log('');
 });
