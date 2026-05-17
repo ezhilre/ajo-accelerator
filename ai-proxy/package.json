@@ -1,0 +1,17 @@
+{
+  "name": "ajo-ai-proxy",
+  "version": "1.0.0",
+  "description": "Local AI proxy — bridges EDS dashboard to Ollama (phase 1) or cloud LLM (phase 2)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

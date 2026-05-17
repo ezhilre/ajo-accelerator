@@ -3,10 +3,19 @@ coverage/*
 logs/*
 node_modules/*
 
+# ai-proxy local dependencies and runtime artifacts
+ai-proxy/node_modules/*
+ai-proxy/package-lock.json
+
 helix-importer-ui
 .DS_Store
 *.bak
 .idea
+
+# environment / secrets — never commit tokens or API keys
+.env
+.env.*
+!.env.example
 
 # Ensure these files are tracked
 !CLAUDE.md
