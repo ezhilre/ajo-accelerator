@@ -18,20 +18,35 @@ const cors = require('cors');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const OLLAMA_BASE = process.env.OLLAMA_BASE || 'http://localhost:11434';
-const MODEL = process.env.MODEL || 'llama3';
+const MODEL = process.env.MODEL || 'gpt-oss:20b';
 const LLM_CONCURRENCY = parseInt(process.env.CONCURRENCY || '1', 10);
 const REQUEST_TIMEOUT_MS = 60_000; // 60 s — local LLMs can be slow
 
 const app = express();
 
-// ── CORS: allow browser on any localhost port (aem up uses 3000) ──────────────
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Allow:
+//   • no-origin (curl / server-to-server)
+//   • localhost on any port  (aem up / vite / etc.)
+//   • *.aem.live  (AEM Live preview & publish)
+//   • *.aem.page  (AEM page preview)
+//   • ALLOWED_ORIGINS env var (comma-separated extra origins for phase-2 deploy)
+const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map((o) => o.trim()).filter(Boolean);
+
+const ORIGIN_RE = /^https?:\/\/(localhost(:\d+)?|[a-z0-9-]+--[a-z0-9-]+--[a-z0-9-]+\.aem\.(live|page))(\/.*)?$/i;
+
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || /^http:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+    if (!origin) return cb(null, true);                          // curl / server calls
+    if (ORIGIN_RE.test(origin)) return cb(null, true);          // localhost + *.aem.live/page
+    if (extraOrigins.includes(origin)) return cb(null, true);   // custom additions
+    console.error(`CORS blocked: ${origin}`);
     cb(new Error(`CORS blocked: ${origin}`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
+  credentials: false,
 }));
 app.use(express.json({ limit: '2mb' })); // journey JSON can be large
 
