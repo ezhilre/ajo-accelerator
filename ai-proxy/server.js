@@ -304,6 +304,9 @@ TASK: Determine if this journey serves a real business purpose or is safe to ret
 
 Return ONLY valid JSON (no markdown fences, no explanation outside the JSON object):
 {
+  "journeyType": "Welcome|Promotional|Transactional|Re-engagement|Abandoned Cart|Onboarding|Retention|Test/POC|Unknown",
+  "useCaseSummary": "one sentence describing what this journey was designed to do, or 'Unable to determine use case'",
+  "targetAudience": "brief description of who this journey targets, or 'Unknown'",
   "businessValue": "low|medium|high",
   "hasBusinessPurpose": true or false,
   "businessPurpose": "one sentence or 'No identifiable business purpose'",

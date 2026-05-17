@@ -1446,6 +1446,99 @@ a.jcc-go-btn:active,
   font-weight: 700;
 }
 
+/* ── Journey type badges ─────────────────────────────────────────────────── */
+
+.jcc-jtype-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: default;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+/* Type-specific colours */
+.jcc-jtype-welcome    { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.jcc-jtype-promo      { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
+.jcc-jtype-transact   { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+.jcc-jtype-reengage   { background: #f3e5f5; color: #6a1b9a; border-color: #ce93d8; }
+.jcc-jtype-abandoned  { background: #fce4ec; color: #ad1457; border-color: #f48fb1; }
+.jcc-jtype-onboard    { background: #e8eaf6; color: #283593; border-color: #9fa8da; }
+.jcc-jtype-retention  { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
+.jcc-jtype-test       { background: #f5f5f5; color: #424242; border-color: #bdbdbd; }
+.jcc-jtype-unknown    { background: #fafafa; color: #757575; border-color: #e0e0e0; }
+
+/* ── Use Case column (table) ─────────────────────────────────────────────── */
+
+.jcc-cuc {
+  max-width: 260px;
+  vertical-align: middle;
+}
+
+.jcc-cuc-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.jcc-cuc-txt {
+  font-size: 0.75rem;
+  color: #4b4b4b;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  cursor: default;
+}
+
+.jcc-cuc-pending {
+  font-size: 0.8rem;
+  color: #7e5fcf;
+  animation: jcc-pulse 1.2s ease-in-out infinite;
+}
+
+.jcc-cuc-empty {
+  color: #b3b3b3;
+  font-size: 0.8rem;
+}
+
+/* ── Use Case section inside expanded detail panel ───────────────────────── */
+
+.jcc-ai-usecase {
+  background: linear-gradient(135deg, #f0f8ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.jcc-ai-usecase-type { margin-bottom: 0.1rem; }
+
+.jcc-ai-usecase-summary,
+.jcc-ai-usecase-audience {
+  font-size: 0.82rem;
+  color: #2c2c2c;
+  line-height: 1.45;
+}
+
+.jcc-ai-usecase-lbl {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e6e6e;
+  margin-right: 0.3rem;
+}
+
 /* responsive */
 @media (max-width: 640px) {
   .jcc-modal-box { padding: 1.25rem; }

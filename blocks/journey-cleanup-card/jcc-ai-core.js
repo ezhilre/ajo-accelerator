@@ -143,6 +143,27 @@ function escAI(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Journey type → display label + CSS modifier
+const JOURNEY_TYPE_META = {
+  'Welcome':        { icon: '👋', mod: 'welcome' },
+  'Promotional':    { icon: '📣', mod: 'promo' },
+  'Transactional':  { icon: '🧾', mod: 'transact' },
+  'Re-engagement':  { icon: '🔄', mod: 'reengage' },
+  'Abandoned Cart': { icon: '🛒', mod: 'abandoned' },
+  'Onboarding':     { icon: '🚀', mod: 'onboard' },
+  'Retention':      { icon: '🤝', mod: 'retention' },
+  'Test/POC':       { icon: '🧪', mod: 'test' },
+  'Unknown':        { icon: '❓', mod: 'unknown' },
+};
+
+export function journeyTypeBadgeHtml(llm) {
+  if (!llm || !llm.journeyType) return '';
+  const t = llm.journeyType;
+  const meta = JOURNEY_TYPE_META[t] || { icon: '📋', mod: 'unknown' };
+  const tip = llm.useCaseSummary ? escAI(llm.useCaseSummary) : escAI(t);
+  return `<span class="jcc-jtype-badge jcc-jtype-${meta.mod}" title="${tip}">${meta.icon} ${escAI(t)}</span>`;
+}
+
 export function scoreBadgeHtml(rule, llm, pending) {
   if (pending) return '<span class="jcc-ai-analyzing">\u23F3 Analyzing\u2026</span>';
   if (!rule) return '<span class="jcc-ai-pending">\u2014</span>';
@@ -154,7 +175,8 @@ export function scoreBadgeHtml(rule, llm, pending) {
   } else { s = rule.score; label = rule.label; tip = `Rule-based: ${s}/100`; }
   const color = s >= 80 ? 'red' : s >= 50 ? 'yellow' : 'green';
   const icon = color === 'red' ? '\uD83D\uDD34' : color === 'yellow' ? '\uD83D\uDFE1' : '\uD83D\uDFE2';
-  return `<span class="jcc-score-badge jcc-score-${color}" title="${escAI(tip)}">${icon} ${s}% <span class="jcc-score-lbl">${escAI(label)}</span></span>`;
+  const typeBadge = journeyTypeBadgeHtml(llm);
+  return `${typeBadge}<span class="jcc-score-badge jcc-score-${color}" title="${escAI(tip)}">${icon} ${s}% <span class="jcc-score-lbl">${escAI(label)}</span></span>`;
 }
 
 export function aiDetailHtml(rule, llm) {
@@ -172,6 +194,23 @@ export function aiDetailHtml(rule, llm) {
   if (llm && !llm.error) {
     const fs = Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6);
     html += '<div class="jcc-ai-llm-panel">';
+
+    // ── Journey use case summary ──────────────────────────────────────────
+    if (llm.journeyType || llm.useCaseSummary || llm.targetAudience) {
+      html += '<div class="jcc-ai-usecase">';
+      if (llm.journeyType) {
+        const meta = JOURNEY_TYPE_META[llm.journeyType] || { icon: '📋', mod: 'unknown' };
+        html += `<div class="jcc-ai-usecase-type"><span class="jcc-jtype-badge jcc-jtype-${escAI(meta.mod)}">${meta.icon} ${escAI(llm.journeyType)}</span></div>`;
+      }
+      if (llm.useCaseSummary) {
+        html += `<div class="jcc-ai-usecase-summary"><span class="jcc-ai-usecase-lbl">What it does:</span> ${escAI(llm.useCaseSummary)}</div>`;
+      }
+      if (llm.targetAudience) {
+        html += `<div class="jcc-ai-usecase-audience"><span class="jcc-ai-usecase-lbl">Target audience:</span> ${escAI(llm.targetAudience)}</div>`;
+      }
+      html += '</div>';
+    }
+
     html += `<div class="jcc-ai-llm-row">`;
     html += `<span class="jcc-ai-llm-lbl">Business Value</span><span class="jcc-ai-biz-${escAI(llm.businessValue || 'low')}">${escAI(llm.businessValue || '\u2014')}</span>`;
     html += `<span class="jcc-ai-llm-lbl">LLM Score</span><strong>${llm.retirementScore || '?'}/100</strong>`;
