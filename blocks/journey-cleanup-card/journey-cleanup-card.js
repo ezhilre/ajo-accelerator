@@ -222,15 +222,43 @@ function readCfg(block) {
 // ─── CSV helpers ──────────────────────────────────────────────────────────────
 
 function csvQ(v) { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; }
-function buildCsv(data, cfg) {
-  const hdrs = ['ID', 'Name', 'Status', 'Version', 'Sandbox', 'Created By', 'Created At', 'Last Modified By', 'Last Modified At', 'Days Stale', 'AJO URL'];
-  const rows = data.map((j) => [
-    j.id, j.name, j.status, j.version, j.sandboxName,
-    j.metadata?.createdBy, j.metadata?.createdAt,
-    j.metadata?.lastModifiedBy, j.metadata?.lastModifiedAt,
-    daysAgo(j.metadata?.lastModifiedAt),
-    `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${j.id}`,
-  ].map(csvQ).join(','));
+function buildCsv(data, cfg, aiScores) {
+  const hdrs = [
+    'ID', 'Name', 'Status', 'Version', 'Sandbox',
+    'Created By', 'Created At', 'Last Modified By', 'Last Modified At', 'Days Stale',
+    'Rule Score', 'AI Score (Blended)', 'AI Verdict',
+    'Journey Type', 'Use Case Summary', 'Target Audience',
+    'Business Value', 'Has Business Purpose', 'Business Purpose',
+    'AI Reasoning', 'Recommendation', 'AI Confidence',
+    'AJO URL',
+  ];
+  const rows = data.map((j) => {
+    const entry = aiScores ? aiScores.get(j.id) : null;
+    const rule = entry?.rule || null;
+    const llm = entry?.llm && !entry.llm.error ? entry.llm : null;
+    const ruleScore = rule ? rule.score : '';
+    const blended = (rule && llm) ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
+      : (rule ? rule.score : '');
+    return [
+      j.id, j.name, j.status, j.version, j.sandboxName,
+      j.metadata?.createdBy, j.metadata?.createdAt,
+      j.metadata?.lastModifiedBy, j.metadata?.lastModifiedAt,
+      daysAgo(j.metadata?.lastModifiedAt),
+      ruleScore,
+      blended,
+      llm ? llm.retirementLabel : (rule ? (rule.score >= 80 ? 'Safe to Retire' : rule.score >= 50 ? 'Review First' : 'Keep Active') : ''),
+      llm ? llm.journeyType : '',
+      llm ? llm.useCaseSummary : '',
+      llm ? llm.targetAudience : '',
+      llm ? llm.businessValue : '',
+      llm ? String(llm.hasBusinessPurpose) : '',
+      llm ? llm.businessPurpose : '',
+      llm ? llm.reasoning : '',
+      llm ? llm.recommendation : '',
+      llm ? llm.confidence : '',
+      `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${j.id}`,
+    ].map(csvQ).join(',');
+  });
   return [hdrs.map(csvQ).join(','), ...rows].join('\r\n');
 }
 
@@ -823,11 +851,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     });
   });
 
-  dash.querySelector('#jr-csv').addEventListener('click', () => triggerDownload(buildCsv(filtered, cfg), `journey-cleanup-filtered-${todayIso()}.csv`));
+  dash.querySelector('#jr-csv').addEventListener('click', () => triggerDownload(buildCsv(filtered, cfg, aiScores), `journey-cleanup-filtered-${todayIso()}.csv`));
   dash.querySelector('#jr-csv-all').addEventListener('click', () => {
     const co = cutoff();
     const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co && (j.status || '').toLowerCase() !== 'deployed');
-    triggerDownload(buildCsv(allStale, cfg), `journey-cleanup-all-${todayIso()}.csv`);
+    triggerDownload(buildCsv(allStale, cfg, aiScores), `journey-cleanup-all-${todayIso()}.csv`);
   });
   dash.querySelector('#jr-reconfig').addEventListener('click', () => { showModal((nc) => showDashboard(root, nc)); });
   const refBtn = dash.querySelector('#jr-refresh');
