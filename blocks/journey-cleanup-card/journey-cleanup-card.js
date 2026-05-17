@@ -5,6 +5,10 @@ import {
   scoreBadgeHtml, aiDetailHtml,
   checkProxyHealth, createAgentPool,
 } from './jcc-ai-core.js';
+import {
+  saveSnapshot, loadSnapshot, clearSnapshot,
+  hydrateScores, fmtSnapshotDate,
+} from './jcc-cache.js';
 
 const AJO_BASE = 'https://platform.adobe.io/ajo/journey';
 const PAGE_SIZE = 50;
@@ -99,6 +103,25 @@ function fetchAll(cfg, onChunk, onErr, onDone) {
 
 function closeModal() { document.querySelector('.jcc-modal-overlay')?.remove(); document.body.classList.remove('jcc-no-scroll'); }
 
+// Verify credentials by making a lightweight AJO API call (fetch page 0, size 1)
+async function verifyCredentials(c) {
+  const f = `status=draft,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
+  const url = `${AJO_BASE}?pageSize=1&page=0&filter=${encodeURIComponent(f)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${c.token}`, 'x-api-key': c.apiKey, 'x-gw-ims-org-id': c.orgId, 'x-sandbox-name': c.sandbox },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const hint = res.status === 401 ? 'Invalid token or API key'
+      : res.status === 403 ? 'Insufficient permissions'
+        : res.status === 404 ? 'Sandbox not found'
+          : `HTTP ${res.status}`;
+    throw new Error(`${hint}${body ? ': ' + body.slice(0, 120) : ''}`);
+  }
+  const data = await res.json();
+  return data.pagination?.totalCount ?? (data.results || []).length;
+}
+
 function showModal(onOk) {
   document.querySelector('.jcc-modal-overlay')?.remove();
   const overlay = document.createElement('div');
@@ -120,26 +143,56 @@ function showModal(onOk) {
     `<div class="jcc-field"><label class="jcc-label" for="jcc-m-org">IMS Org ID <span class="jcc-req">*</span></label><input id="jcc-m-org" name="orgId" type="text" value="${esc(sv.orgId || '')}" placeholder="xxxxx@AdobeOrg" /></div>`,
     `<div class="jcc-field"><label class="jcc-label" for="jcc-m-ten">Tenant ID <span class="jcc-req">*</span></label><input id="jcc-m-ten" name="tenantId" type="text" value="${esc(sv.tenantId || '')}" placeholder="my-tenant" /><span class="jcc-field-hint">Used to build AJO deep-link URLs</span></div>`,
     '<div class="jcc-modal-error" id="jcc-modal-err" style="display:none"></div>',
+    '<div class="jcc-modal-connect-status" id="jcc-modal-cs" style="display:none"></div>',
     '<div class="jcc-modal-footer"><p class="jcc-modal-note">&#x1F512; sessionStorage only.</p>',
     '<div class="jcc-modal-actions"><button type="button" class="jcc-btn-secondary jcc-modal-cancel">&#x2715; Cancel</button>',
-    '<button type="submit" class="jcc-btn-primary">&#x1F680; Load Journeys</button></div></div>',
+    '<button type="submit" class="jcc-btn-primary" id="jcc-modal-connect">&#x1F517; Connect</button></div></div>',
     '</form>',
   ].join('');
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   document.body.classList.add('jcc-no-scroll');
   setTimeout(() => { box.querySelector('textarea')?.focus(); }, 80);
-  box.querySelector('#jcc-modal-form').addEventListener('submit', (e) => {
+
+  const formEl = box.querySelector('#jcc-modal-form');
+  const errEl = box.querySelector('#jcc-modal-err');
+  const csEl = box.querySelector('#jcc-modal-cs');
+  const connectBtn = box.querySelector('#jcc-modal-connect');
+
+  formEl.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const c = { token: (fd.get('token') || '').trim(), apiKey: (fd.get('apiKey') || '').trim(), orgId: (fd.get('orgId') || '').trim(), sandbox: (fd.get('sandbox') || '').trim(), tenantId: (fd.get('tenantId') || '').trim() };
-    const errEl = box.querySelector('#jcc-modal-err');
     const missing = ['token', 'apiKey', 'orgId', 'sandbox', 'tenantId'].filter((k) => !c[k]);
-    if (missing.length) { errEl.style.display = 'flex'; errEl.textContent = `\u26A0 Fill in: ${missing.join(', ')}`; return; }
+    if (missing.length) {
+      errEl.style.display = 'flex'; csEl.style.display = 'none';
+      errEl.textContent = `\u26A0 Fill in: ${missing.join(', ')}`;
+      return;
+    }
     errEl.style.display = 'none';
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(c));
-    closeModal(); onOk(c);
+    // Show connecting state
+    connectBtn.disabled = true;
+    connectBtn.textContent = '\u23F3 Connecting\u2026';
+    csEl.style.display = 'flex';
+    csEl.className = 'jcc-modal-connect-status jcc-cs-pending';
+    csEl.textContent = '\u23F3 Verifying credentials against AJO API\u2026';
+
+    try {
+      const count = await verifyCredentials(c);
+      csEl.className = 'jcc-modal-connect-status jcc-cs-ok';
+      csEl.textContent = `\u2705 Connected \u2014 sandbox: ${c.sandbox} (${count.toLocaleString()} journeys found)`;
+      connectBtn.textContent = '\u2714 Connected!';
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(c));
+      // Brief pause so user sees success, then open dashboard
+      setTimeout(() => { closeModal(); onOk(c); }, 900);
+    } catch (err) {
+      csEl.className = 'jcc-modal-connect-status jcc-cs-err';
+      csEl.textContent = `\u274C Connection failed: ${err.message}`;
+      connectBtn.disabled = false;
+      connectBtn.textContent = '\u1F517 Connect';
+    }
   });
+
   box.querySelector('.jcc-modal-cancel').addEventListener('click', closeModal);
   overlay.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
@@ -188,26 +241,97 @@ function triggerDownload(csv, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+// ─── cache banner (shown when a snapshot exists) ─────────────────────────────
+
+function showCacheBanner(root, snap, cfg) {
+  return new Promise((resolve) => {
+    root.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = 'jcc-cache-banner';
+    const staleBadge = snap.isStale
+      ? `<span class="jcc-cb-stale-badge">\u26A0 ${snap.daysOld} days old \u2014 consider refreshing</span>`
+      : `<span class="jcc-cb-fresh-badge">\u2705 ${snap.daysOld} days old</span>`;
+    el.innerHTML = `
+      <div class="jcc-cb-icon">\uD83D\uDCE6</div>
+      <div class="jcc-cb-info${snap.isStale ? ' jcc-cb-stale' : ''}">
+        <div class="jcc-cb-title">Cached snapshot available \u2014 <strong>${esc(cfg.sandbox)}</strong></div>
+        <div class="jcc-cb-meta">
+          Analyzed: <strong>${fmtSnapshotDate(snap.analyzedAt)}</strong>
+          &nbsp;\u00B7&nbsp; ${snap.journeyCount} journeys
+          &nbsp;\u00B7&nbsp; ${snap.aiScoredCount} AI-scored
+          &nbsp;&nbsp;${staleBadge}
+        </div>
+      </div>
+      <div class="jcc-cb-actions">
+        <button class="jcc-btn-primary jcc-cb-load">\u26A1 Load from cache</button>
+        <button class="jcc-btn-secondary jcc-cb-fresh">\uD83D\uDD04 Run fresh analysis</button>
+        <button class="jcc-btn-sec jcc-cb-clear">\uD83D\uDDD1 Clear cache</button>
+      </div>
+    `;
+    root.appendChild(el);
+    el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve('cache'));
+    el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve('fresh'));
+    el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve('clear'));
+  });
+}
+
 // ─── dashboard ────────────────────────────────────────────────────────────────
 
-function showDashboard(root, cfg) {
-  let all = []; let filtered = []; let pg = 0;
+async function showDashboard(root, cfg) {
+  // Check for cached snapshot before fetching from API
+  let cachedSnap = null;
+  try { cachedSnap = await loadSnapshot(cfg.sandbox); } catch (_) { /* ignore IDB errors */ }
+
+  if (cachedSnap) {
+    const choice = await showCacheBanner(root, cachedSnap, cfg);
+    if (choice === 'cache') {
+      const restoredScores = hydrateScores(cachedSnap.aiScores);
+      showDashboardCore(root, cfg, cachedSnap.journeys, restoredScores, cachedSnap);
+      return;
+    }
+    if (choice === 'clear') {
+      try { await clearSnapshot(cfg.sandbox); } catch (_) { /* ignore */ }
+    }
+    // 'fresh' falls through
+  }
+
+  showDashboardCore(root, cfg, null, null, null);
+}
+
+function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
+  let all = initialJourneys ? [...initialJourneys] : [];
+  let filtered = []; let pg = 0;
   let nameQ = ''; let statusQ = 'all'; let createdByQ = 'all'; let bucketQ = 'all';
   let sortK = 'lastModifiedAt'; let sortD = 'asc'; let loading = true; let expanded = null;
 
   const aiSaved = getAiSettings();
   let aiEnabled = !!aiSaved.enabled;
+  let includeLive = !!aiSaved.includeLive;
   let proxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
-  const aiScores = new Map();
-  const aiPending = new Set();
+  // Hydrate from cache if provided; otherwise start empty
+  const aiScores = initialScores || new Map();
   const detailCache = new Map();
   let agentPool = null;
   let aiRunning = false;
+  let snapshotSaved = !!snap; // don't auto-save again if loaded from cache
 
   root.innerHTML = '';
   const dash = document.createElement('div');
   dash.className = 'jcc-dashboard';
+
+  // Cache info banner (shown when loaded from cache)
+  let snapBannerHtml = '';
+  if (snap) {
+    const staleWarn = snap.isStale ? '<span class="jcc-snap-stale-txt"> \u26A0 Over 90 days old</span>' : '';
+    snapBannerHtml = `<div class="jcc-snap-info${snap.isStale ? ' jcc-snap-stale' : ''}" id="jcc-snap-info">`
+      + `\uD83D\uDCE6 Loaded from cache &nbsp;\u00B7&nbsp; Analyzed: <strong>${fmtSnapshotDate(snap.analyzedAt)}</strong>`
+      + ` &nbsp;\u00B7&nbsp; ${snap.journeyCount} journeys &nbsp;\u00B7&nbsp; ${snap.aiScoredCount} AI-scored${staleWarn}`
+      + ` <button class="jcc-btn-sec jcc-snap-refresh">\uD83D\uDD04 Run fresh</button>`
+      + '</div>';
+  }
+
   dash.innerHTML = [
+    snapBannerHtml,
     // Header
     '<div class="jcc-header">',
     '  <div class="jcc-header-left"><span class="jcc-hi">&#x1F9F9;</span><div>',
@@ -222,30 +346,47 @@ function showDashboard(root, cfg) {
     '    <button class="jcc-btn-pri" id="jr-refresh" disabled>&#x21BA; Refresh</button>',
     '  </div>',
     '</div>',
-    // AI bar
-    '<div class="jcc-ai-bar" id="jcc-ai-bar">',
-    '  <div class="jcc-ai-bar-top">',
-    '    <label class="jcc-ai-toggle-lbl"><input type="checkbox" id="jcc-ai-chk"',
-    aiEnabled ? ' checked' : '', ' /><span>&#x1F916; Enable LLM Analysis</span></label>',
-    '    <div class="jcc-ai-cfg" id="jcc-ai-cfg" style="', aiEnabled ? '' : 'display:none', '">',
-    '      <label class="jcc-ai-cfg-lbl" for="jcc-ai-url">Proxy URL:</label>',
+    // ── Unified progress + AI bar ─────────────────────────────────────────
+    '<div class="jcc-unified-bar" id="jcc-unified-bar">',
+    // Phase 1: Fetch
+    '  <div class="jcc-phase-row">',
+    '    <span class="jcc-phase-lbl jcc-phase-fetch-lbl">&#x1F4E1; Fetch</span>',
+    '    <div class="jcc-prog-track"><div class="jcc-prog-fill" id="jcc-pf"></div></div>',
+    '    <span class="jcc-prog-lbl" id="jcc-pl">Starting\u2026</span>',
+    '    <button class="jcc-stop-btn" id="jcc-stop" style="display:none">&#x23F9; Stop</button>',
+    '  </div>',
+    // Phase 2: Score (rule always; LLM if enabled)
+    '  <div class="jcc-phase-row" id="jcc-phase-score">',
+    '    <span class="jcc-phase-lbl jcc-phase-score-lbl">&#x1F9E0; Score</span>',
+    '    <div class="jcc-prog-track"><div class="jcc-prog-fill jcc-prog-fill-score" id="jcc-ai-pf"></div></div>',
+    '    <span class="jcc-prog-lbl" id="jcc-ai-pl">Waiting for fetch\u2026</span>',
+    '  </div>',
+    // AI settings row
+    '  <div class="jcc-ai-settings-row">',
+    '    <label class="jcc-ai-toggle-lbl">',
+    `      <input type="checkbox" id="jcc-ai-chk"${aiEnabled ? ' checked' : ''} />`,
+    '      <span>&#x1F916; Smart AI Analyze</span>',
+    '    </label>',
+    '    <span class="jcc-ai-tip">When ON: LLM scores <strong>draft+failed</strong> journeys after loading. OFF = instant rule scoring only.</span>',
+    '    <label class="jcc-ai-toggle-lbl jcc-ai-live-lbl" title="Also run LLM on live (deployed) journeys — slower but catches risky live campaigns">',
+    `      <input type="checkbox" id="jcc-ai-live-chk"${includeLive ? ' checked' : ''} />`,
+    '      <span>📡 Include live journeys</span>',
+    '    </label>',
+    '    <div class="jcc-ai-cfg" id="jcc-ai-cfg">',
+    '      <label class="jcc-ai-cfg-lbl" for="jcc-ai-url">Proxy:</label>',
     `      <input id="jcc-ai-url" class="jcc-ai-url" type="text" value="${esc(proxyUrl)}" placeholder="http://localhost:3001" />`,
     '      <button id="jcc-ai-health-chk" class="jcc-btn-health">&#x1F50D; Test</button>',
     '      <span id="jcc-ai-status" class="jcc-ai-status jcc-ai-s-unknown">&#x25CF; Not checked</span>',
     '    </div>',
-    '    <div class="jcc-ai-actions" id="jcc-ai-actions" style="', aiEnabled ? '' : 'display:none', '">',
-    '      <button id="jcc-ai-run" class="jcc-btn-ai" disabled>&#x1F916; Analyze All</button>',
-    '      <button id="jcc-ai-stop" class="jcc-btn-ai-stop" style="display:none">&#x23F9; Stop</button>',
+    '    <div class="jcc-ai-actions">',
+    '      <button id="jcc-ai-stop" class="jcc-btn-ai-stop" style="display:none">&#x23F9; Stop LLM</button>',
     '    </div>',
     '  </div>',
-    '  <div class="jcc-ai-bar-bottom" id="jcc-ai-bar-bottom" style="display:none">',
-    '    <div class="jcc-ai-prog-wrap"><div class="jcc-ai-prog-track"><div class="jcc-ai-prog-fill" id="jcc-ai-pf"></div></div>',
-    '    <span id="jcc-ai-pl" class="jcc-ai-prog-lbl">Initialising\u2026</span></div>',
-    '    <div class="jcc-ai-counts">',
-    '      <span class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire">&#x1F534; 0 Retire</span>',
-    '      <span class="jcc-ai-cnt jcc-ai-cnt-review" id="jcc-ai-review">&#x1F7E1; 0 Review</span>',
-    '      <span class="jcc-ai-cnt jcc-ai-cnt-keep"   id="jcc-ai-keep">&#x1F7E2; 0 Keep</span>',
-    '    </div>',
+    // AI counts row
+    '  <div class="jcc-ai-counts" id="jcc-ai-counts" style="display:none">',
+    '    <span class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire">&#x1F534; 0 Retire</span>',
+    '    <span class="jcc-ai-cnt jcc-ai-cnt-review" id="jcc-ai-review">&#x1F7E1; 0 Review</span>',
+    '    <span class="jcc-ai-cnt jcc-ai-cnt-keep"   id="jcc-ai-keep">&#x1F7E2; 0 Keep</span>',
     '  </div>',
     '</div>',
     // Summary
@@ -269,12 +410,6 @@ function showDashboard(root, cfg) {
     '    <span class="jcc-bc-item jcc-bc-61-90">61\u201390: <strong id="bk-61-90">\u2014</strong></span>',
     '    <span class="jcc-bc-item jcc-bc-90plus">90+: <strong id="bk-90plus">\u2014</strong></span>',
     '  </span>',
-    '</div>',
-    // Progress
-    '<div class="jcc-prog-wrap" id="jcc-pw">',
-    '  <div class="jcc-prog-track"><div class="jcc-prog-fill" id="jcc-pf"></div></div>',
-    '  <span class="jcc-prog-lbl" id="jcc-pl">Starting\u2026</span>',
-    '  <button class="jcc-stop-btn" id="jcc-stop">&#x23F9; Stop</button>',
     '</div>',
     // Controls
     '<div class="jcc-controls">',
@@ -316,7 +451,6 @@ function showDashboard(root, cfg) {
   root.appendChild(dash);
 
   // Element refs
-  const pw = dash.querySelector('#jcc-pw');
   const pf = dash.querySelector('#jcc-pf');
   const pl = dash.querySelector('#jcc-pl');
   const stopBtn = dash.querySelector('#jcc-stop');
@@ -333,13 +467,12 @@ function showDashboard(root, cfg) {
   const errEl = dash.querySelector('#jcc-eb');
   const aiChk = dash.querySelector('#jcc-ai-chk');
   const aiCfg = dash.querySelector('#jcc-ai-cfg');
-  const aiActions = dash.querySelector('#jcc-ai-actions');
   const aiUrlEl = dash.querySelector('#jcc-ai-url');
   const aiStatusEl = dash.querySelector('#jcc-ai-status');
+  const aiLiveChk = dash.querySelector('#jcc-ai-live-chk');
   const aiHealthBtn = dash.querySelector('#jcc-ai-health-chk');
-  const aiRunBtn = dash.querySelector('#jcc-ai-run');
   const aiStopBtn = dash.querySelector('#jcc-ai-stop');
-  const aiBarBottom = dash.querySelector('#jcc-ai-bar-bottom');
+  const aiCountsEl = dash.querySelector('#jcc-ai-counts');
   const aiPf = dash.querySelector('#jcc-ai-pf');
   const aiPl = dash.querySelector('#jcc-ai-pl');
 
@@ -439,7 +572,8 @@ function showDashboard(root, cfg) {
 
     // AI detail panel
     const aiEntry = aiScores.get(j.id);
-    const aiPendingRow = aiPending.has(j.id);
+    // A journey is pending LLM if AI is running and it has only a rule score (no llm result yet)
+    const aiPendingRow = aiRunning && aiEntry && !aiEntry.llm;
     let aiHtml = '';
     if (aiEnabled) {
       if (aiPendingRow) {
@@ -489,7 +623,7 @@ function showDashboard(root, cfg) {
         tr.className = `jcc-row${isExp ? ' jcc-row-exp' : ''}`;
         const journeyUrl = `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(j.id)}`;
         const aiEntry = aiScores.get(j.id);
-        const pending = aiPending.has(j.id);
+        const pending = aiRunning && aiEntry && !aiEntry.llm;
         const badge = scoreBadgeHtml(aiEntry?.rule || null, aiEntry?.llm || null, pending);
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
@@ -542,8 +676,17 @@ function showDashboard(root, cfg) {
   // ── progress helpers ───────────────────────────────────────────────────────
 
   function setP(pct, lbl) { pf.style.width = `${Math.min(100, pct)}%`; pl.textContent = lbl; }
-  function doneP() { pw.classList.add('jcc-pd'); setTimeout(() => { pw.style.display = 'none'; }, 600); }
   function showErr(msg) { errEl.style.display = 'block'; errEl.innerHTML = `\u26A0 ${esc(msg)}`; }
+
+  // Rule-score all journeys in a chunk immediately (no network, instant)
+  function applyRuleScores(journeys) {
+    journeys.forEach((j) => {
+      if (!aiScores.has(j.id)) {
+        const rule = computeRuleScore(j);
+        aiScores.set(j.id, { rule, llm: null });
+      }
+    });
+  }
 
   // ── AI controls ────────────────────────────────────────────────────────────
 
@@ -558,43 +701,31 @@ function showDashboard(root, cfg) {
     const health = await checkProxyHealth(proxyUrl);
     if (health.ok) {
       updAiStatus(true, `Connected \u2014 ${health.model || 'unknown model'}`);
-      aiRunBtn.disabled = loading;
     } else {
       updAiStatus(false, `Offline: ${health.error || 'unreachable'}`);
-      aiRunBtn.disabled = true;
     }
   }
 
-  function startAI() {
-    if (aiRunning) return;
+  // LLM analysis — runs after fetch completes (if aiEnabled)
+  function startAI(targets) {
+    if (aiRunning || !targets.length) return;
     aiRunning = true;
-    aiRunBtn.style.display = 'none';
     aiStopBtn.style.display = 'inline-flex';
-    aiBarBottom.style.display = 'flex';
+    aiCountsEl.style.display = 'flex';
     aiPf.style.width = '0%';
-    aiPl.textContent = 'Starting 4 agents\u2026';
-
-    const co = cutoff();
-    const targets = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co && (j.status || '').toLowerCase() !== 'deployed');
-
-    // Mark all as pending
-    targets.forEach((j) => { aiPending.add(j.id); });
-    render();
+    aiPl.textContent = `\uD83E\uDD16 Starting LLM analysis on ${targets.length} journeys\u2026`;
 
     agentPool = createAgentPool({
       cfg, proxyUrl, detailCache,
       onScore(id, rule, llm) {
-        aiPending.delete(id);
+        // Merge LLM result into existing rule score entry
         aiScores.set(id, { rule, llm });
-        // Refresh visible row score badge without full re-render
-        const scoreCell = tb.querySelector(`tr[data-id="${CSS.escape(id)}"] .jcc-cai`);
-        if (scoreCell) scoreCell.innerHTML = scoreBadgeHtml(rule, llm, false);
-        else render(); // row may be on different page
+        render();
       },
       onProgress({ done, total, retireCount, reviewCount, keepCount }) {
         const pct = Math.round((done / total) * 100);
         aiPf.style.width = `${pct}%`;
-        aiPl.textContent = `\u1F916 Analyzing ${done}/${total} journeys\u2026`;
+        aiPl.textContent = `\uD83E\uDD16 LLM: ${done}/${total} journeys scored`;
         dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retireCount} Retire`;
         dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${reviewCount} Review`;
         dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keepCount} Keep`;
@@ -602,11 +733,16 @@ function showDashboard(root, cfg) {
       onComplete() {
         aiRunning = false;
         aiStopBtn.style.display = 'none';
-        aiRunBtn.style.display = 'inline-flex';
-        aiRunBtn.textContent = '\uD83E\uDD16 Re-analyze';
-        aiPl.textContent = `Done \u2014 ${targets.length} journeys scored`;
+        aiPl.textContent = `\u2705 LLM done \u2014 ${targets.length} journeys scored`;
         aiPf.style.width = '100%';
         render();
+        // Auto-save full snapshot after LLM completes
+        if (!snapshotSaved) {
+          snapshotSaved = true;
+          saveSnapshot(cfg.sandbox, all, aiScores)
+            .then(() => { aiPl.textContent += ' \u2014 \uD83D\uDCBE Saved to cache'; })
+            .catch(() => { /* ignore */ });
+        }
       },
     });
     agentPool.enqueue(targets);
@@ -616,27 +752,28 @@ function showDashboard(root, cfg) {
 
   aiChk.addEventListener('change', () => {
     aiEnabled = aiChk.checked;
-    aiCfg.style.display = aiEnabled ? '' : 'none';
-    aiActions.style.display = aiEnabled ? '' : 'none';
-    saveAiSettings({ enabled: aiEnabled, proxyUrl });
+    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
     if (aiEnabled) testProxy();
     render();
   });
 
+  aiLiveChk.addEventListener('change', () => {
+    includeLive = aiLiveChk.checked;
+    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
+  });
+
   aiUrlEl.addEventListener('change', () => {
     proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
-    saveAiSettings({ enabled: aiEnabled, proxyUrl });
+    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
   });
 
   aiHealthBtn.addEventListener('click', () => { proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001'; testProxy(); });
-  aiRunBtn.addEventListener('click', startAI);
+
   aiStopBtn.addEventListener('click', () => {
     if (agentPool) { agentPool.stop(); agentPool = null; }
     aiRunning = false;
-    aiPending.clear();
     aiStopBtn.style.display = 'none';
-    aiRunBtn.style.display = 'inline-flex';
-    aiPl.textContent = `Stopped \u2014 ${aiScores.size} scored so far`;
+    aiPl.textContent = `\u23F9 LLM stopped \u2014 ${aiScores.size} scored so far`;
     render();
   });
 
@@ -670,9 +807,11 @@ function showDashboard(root, cfg) {
   refBtn.addEventListener('click', () => {
     all = []; filtered = []; loading = true;
     errEl.style.display = 'none';
-    pw.style.display = ''; pw.classList.remove('jcc-pd'); pf.style.width = '0%';
+    pf.style.width = '0%';
     refBtn.disabled = true;
-    aiScores.clear(); aiPending.clear();
+    aiScores.clear();
+    aiPl.textContent = 'Waiting for fetch\u2026'; aiPf.style.width = '0%';
+    aiCountsEl.style.display = 'none'; aiStopBtn.style.display = 'none';
     updSummary(); applyF(); startLoad();
   });
 
@@ -683,15 +822,16 @@ function showDashboard(root, cfg) {
   stopBtn.addEventListener('click', () => {
     if (fetchCtrl) { fetchCtrl.abort(); fetchCtrl = null; }
     stopBtn.style.display = 'none'; loading = false; refBtn.disabled = false;
-    setP(pf ? parseFloat(pf.style.width) || 0 : 0, `\u23F9 Stopped \u2014 ${all.length} loaded`);
+    setP(parseFloat(pf.style.width) || 0, `\u23F9 Stopped \u2014 ${all.length} loaded`);
     updSummary(); updOwnerFilter(); applyF();
-    setTimeout(() => { pw.style.display = 'none'; }, 2000);
   });
 
   function startLoad() {
     let totalPages = 0;
+    aiScores.clear();
     stopBtn.style.display = 'inline-flex';
     setP(5, 'Fetching page 1\u2026');
+    aiPl.textContent = 'Waiting for fetch\u2026'; aiPf.style.width = '0%';
     fetchCtrl = fetchAll(
       cfg,
       (chunk, cumul, pageNum) => {
@@ -699,17 +839,73 @@ function showDashboard(root, cfg) {
         all = cumul;
         const pct = totalPages > 1 ? Math.min(90, Math.round((pageNum / totalPages) * 85) + 5) : 50;
         setP(pct, `Page ${pageNum + 1} \u2014 ${cumul.length} fetched\u2026`);
+        // Apply rule scores instantly as each chunk arrives
+        applyRuleScores(chunk);
         updSummary(); updOwnerFilter(); applyF();
       },
       (err) => showErr(`Fetch error: ${err.message}`),
       (final) => {
         fetchCtrl = null; all = final; loading = false; refBtn.disabled = false;
         stopBtn.style.display = 'none';
-        setP(100, `Done \u2014 ${final.length} journeys`);
-        updSummary(); updOwnerFilter(); applyF(); doneP();
-        if (aiEnabled) aiRunBtn.disabled = false;
+        setP(100, `\u2705 Done \u2014 ${final.length} journeys loaded`);
+        applyRuleScores(final); // ensure all scored
+        updSummary(); updOwnerFilter(); applyF();
+
+        const co = cutoff();
+        // Default: LLM on draft + failed only. "Include live" adds live/deployed journeys.
+        const staleTargets = final.filter((j) => {
+          if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
+          const s = (j.status || '').toLowerCase();
+          if (s === 'draft' || s === 'failed') return true;
+          if (includeLive && (s === 'live' || s === 'deployed')) return true;
+          return false;
+        });
+
+        if (aiEnabled) {
+          // LLM phase starts automatically after fetch
+          aiPl.textContent = `\uD83E\uDD16 Fetch done \u2014 starting LLM on ${staleTargets.length} journeys\u2026`;
+          testProxy().then(() => startAI(staleTargets));
+        } else {
+          // Rule-only mode: show instant summary
+          let retire = 0; let review = 0; let keep = 0;
+          staleTargets.forEach((j) => {
+            const e = aiScores.get(j.id);
+            if (!e) return;
+            if (e.rule.score >= 80) retire += 1;
+            else if (e.rule.score >= 50) review += 1;
+            else keep += 1;
+          });
+          aiCountsEl.style.display = 'flex';
+          dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retire} Retire`;
+          dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${review} Review`;
+          dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keep} Keep`;
+          aiPf.style.width = '100%';
+          aiPl.textContent = `\u2705 Rule scoring complete \u2014 ${staleTargets.length} journeys`;
+          // Auto-save rule-only snapshot
+          if (!snapshotSaved) {
+            snapshotSaved = true;
+            saveSnapshot(cfg.sandbox, final, aiScores)
+              .then(() => { aiPl.textContent += ' \u2014 \uD83D\uDCBE Saved to cache'; })
+              .catch(() => { /* ignore */ });
+          }
+        }
       },
     );
+  }
+
+  // Snap info button — re-run fresh analysis
+  dash.querySelector('#jcc-snap-info .jcc-snap-refresh')?.addEventListener('click', () => showDashboard(root, cfg));
+
+  // If loaded from cache, skip startLoad and render directly
+  if (initialJourneys) {
+    loading = false;
+    setP(100, `\u2705 ${initialJourneys.length} journeys (from cache)`);
+    aiPf.style.width = '100%';
+    aiPl.textContent = `\u2705 ${aiScores.size} journeys scored (from cache)`;
+    if (aiScores.size) aiCountsEl.style.display = 'flex';
+    updSummary(); updOwnerFilter(); applyF();
+    dash.querySelector('#jr-refresh').disabled = false;
+    return;
   }
 
   startLoad();

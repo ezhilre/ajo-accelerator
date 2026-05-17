@@ -119,6 +119,36 @@ body.jcc-no-scroll {
   gap: 0.5rem;
 }
 
+/* ── Connect status (pending / ok / err) ──────────────────────────────────── */
+
+.jcc-modal-connect-status {
+  border-radius: 4px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jcc-cs-pending {
+  background: #f0f4ff;
+  border: 1px solid #c9d8ff;
+  color: #1473e6;
+}
+
+.jcc-cs-ok {
+  background: #cef5e7;
+  border: 1px solid #a0dfc6;
+  color: #0d7055;
+}
+
+.jcc-cs-err {
+  background: #fdf3f4;
+  border: 1px solid #f4b8bb;
+  color: #c9252d;
+}
+
 .jcc-modal-footer {
   display: flex;
   align-items: center;
@@ -503,38 +533,99 @@ body.jcc-no-scroll {
 .jcc-bc-61-90 strong { color: #da7b11; }
 .jcc-bc-90plus strong { color: #e34850; }
 
-/* progress bar */
-.jcc-prog-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+/* ── Unified progress + AI bar ───────────────────────────────────────────── */
+
+.jcc-unified-bar {
+  background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
   margin-bottom: 1.1rem;
-  transition: opacity 0.4s;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
-.jcc-prog-wrap.jcc-pd { opacity: 0; }
+/* Phase rows: Fetch row + Score row */
+.jcc-phase-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
 
+.jcc-phase-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.jcc-phase-fetch-lbl { color: #1473e6; }
+.jcc-phase-score-lbl { color: #7e5fcf; }
+
+/* Shared progress track inside phase rows */
 .jcc-prog-track {
   flex: 1;
-  height: 4px;
-  background: #e1e1e1;
-  border-radius: 2px;
+  height: 5px;
+  background: #dde5ff;
+  border-radius: 3px;
   overflow: hidden;
+  min-width: 80px;
 }
 
 .jcc-prog-fill {
   height: 100%;
   background: linear-gradient(90deg, #1473e6, #7e5fcf);
-  border-radius: 2px;
+  border-radius: 3px;
   width: 0%;
   transition: width 0.4s ease;
 }
 
+.jcc-prog-fill-score {
+  background: linear-gradient(90deg, #7e5fcf, #b060d8);
+}
+
 .jcc-prog-lbl {
   font-size: 0.78rem;
-  color: #6e6e6e;
+  color: #4b4b4b;
   white-space: nowrap;
-  min-width: 220px;
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+/* AI settings row — checkbox + tip + proxy config */
+.jcc-ai-settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #c9d8ff;
+  margin-top: 0.1rem;
+}
+
+.jcc-ai-tip {
+  font-size: 0.73rem;
+  color: #6e6e6e;
+  flex: 1;
+  min-width: 120px;
+  font-style: italic;
+}
+
+/* "Include live journeys" secondary checkbox — amber tint to signal extra cost */
+.jcc-ai-live-lbl {
+  border: 1px solid #f4d48a;
+  background: #fffbf0;
+  border-radius: 12px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.jcc-ai-live-lbl:hover {
+  background: #fce7c0;
 }
 
 /* stop button */
@@ -546,8 +637,8 @@ body.jcc-no-scroll {
   color: #e34850;
   border: 1px solid #e34850;
   border-radius: 12px;
-  padding: 0.3rem 0.8rem;
-  font-size: 0.78rem;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.75rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
@@ -562,9 +653,7 @@ body.jcc-no-scroll {
   box-shadow: 0 2px 6px rgba(227, 72, 80, 0.3);
 }
 
-.jcc-stop-btn:active {
-  box-shadow: none;
-}
+.jcc-stop-btn:active { box-shadow: none; }
 
 /* controls */
 .jcc-controls { margin-bottom: 0.85rem; }
@@ -958,34 +1047,7 @@ a.jcc-go-btn:active,
 
 .jcc-pe { padding: 0 0.15rem; color: #b3b3b3; font-size: 0.85rem; }
 
-/* ── AI bar ──────────────────────────────────────────────────────────────── */
-
-.jcc-ai-bar {
-  background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
-  border: 1px solid #c9d8ff;
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
-  margin-bottom: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.jcc-ai-bar-top {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.jcc-ai-bar-bottom {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid #c9d8ff;
-}
+/* ── AI bar controls ─────────────────────────────────────────────────────── */
 
 .jcc-ai-toggle-lbl {
   display: flex;
@@ -1063,23 +1125,6 @@ a.jcc-go-btn:active,
 
 .jcc-ai-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 
-.jcc-btn-ai {
-  background: linear-gradient(135deg, #7e5fcf, #1473e6);
-  color: #fff;
-  border: none;
-  border-radius: 16px;
-  padding: 0.5rem 1.1rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  transition: opacity 0.15s, box-shadow 0.15s;
-  white-space: nowrap;
-}
-
-.jcc-btn-ai:hover:not(:disabled) { opacity: 0.88; box-shadow: 0 3px 10px rgba(126, 95, 207, 0.4); }
-.jcc-btn-ai:disabled { opacity: 0.4; cursor: not-allowed; }
-
 .jcc-btn-ai-stop {
   background: transparent;
   color: #e34850;
@@ -1096,29 +1141,8 @@ a.jcc-go-btn:active,
 
 .jcc-btn-ai-stop:hover { background: #e34850; color: #fff; }
 
-/* AI progress */
-.jcc-ai-prog-wrap { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 200px; }
-
-.jcc-ai-prog-track {
-  flex: 1;
-  height: 6px;
-  background: #d8d0f5;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.jcc-ai-prog-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #7e5fcf, #1473e6);
-  border-radius: 3px;
-  width: 0%;
-  transition: width 0.4s ease;
-}
-
-.jcc-ai-prog-lbl { font-size: 0.78rem; color: #4b4b4b; white-space: nowrap; }
-
 /* AI counts */
-.jcc-ai-counts { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.jcc-ai-counts { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding-top: 0.4rem; }
 
 .jcc-ai-cnt {
   font-size: 0.8rem;
@@ -1320,6 +1344,108 @@ a.jcc-go-btn:active,
   border-top: 1px solid #f4b8bb;
 }
 
+/* ── Cache banner (pre-dashboard choice screen) ─────────────────────────── */
+
+.jcc-cache-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: linear-gradient(135deg, #f0f6ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem auto;
+  max-width: 860px;
+  box-shadow: 0 2px 10px rgba(20, 115, 230, 0.08);
+}
+
+.jcc-cb-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-cb-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.jcc-cb-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  margin-bottom: 0.3rem;
+}
+
+.jcc-cb-meta {
+  font-size: 0.82rem;
+  color: #4b4b4b;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.jcc-cb-fresh-badge {
+  background: #cef5e7;
+  color: #0d7055;
+  border: 1px solid #a0dfc6;
+  border-radius: 10px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.jcc-cb-stale-badge {
+  background: #fce7c0;
+  color: #a85900;
+  border: 1px solid #f4d48a;
+  border-radius: 10px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.jcc-cb-stale .jcc-cb-title { color: #a85900; }
+
+.jcc-cb-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* ── Snapshot info strip (inside dashboard when loaded from cache) ────────── */
+
+.jcc-snap-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background: #f0f6ff;
+  border: 1px solid #c9d8ff;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.8rem;
+  color: #4b4b4b;
+}
+
+.jcc-snap-stale {
+  background: #fffbf0;
+  border-color: #f4d48a;
+}
+
+.jcc-snap-stale-txt {
+  color: #a85900;
+  font-weight: 700;
+}
+
 /* responsive */
 @media (max-width: 640px) {
   .jcc-modal-box { padding: 1.25rem; }
@@ -1336,4 +1462,7 @@ a.jcc-go-btn:active,
   .jcc-filter-row { flex-direction: column; align-items: flex-start; }
   .jcc-rc { margin-left: 0; }
   .jcc-pag { flex-direction: column; align-items: flex-start; }
+  .jcc-phase-row { flex-wrap: wrap; }
+  .jcc-prog-lbl { min-width: 0; }
+  .jcc-ai-settings-row { flex-direction: column; align-items: flex-start; }
 }
