@@ -468,8 +468,8 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '<div id="jcc-eb" class="jcc-err-banner" style="display:none"></div>',
     // Table
     '<div class="jcc-tbl-wrap">',
-    '  <table class="jcc-tbl"><thead><tr>',
-    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Use Case</th><th>Created</th><th>Stale</th><th>AI Score</th><th>Go</th>',
+    '  <table class="jcc-tbl"><thead><tr id="jcc-thead-row">',
+    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Use Case</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Score</th><th>Go</th>',
     '  </tr></thead><tbody id="jcc-tb"></tbody></table>',
     '  <div id="jcc-empty" class="jcc-empty" style="display:none"><p>&#x1F50D; No stale journeys match.</p></div>',
     '</div>',
@@ -627,11 +627,25 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   // ── render table ───────────────────────────────────────────────────────────
 
+  // Whether any journey has an LLM score (controls AI Score column visibility)
+  function hasLlmScores() {
+    for (const entry of aiScores.values()) {
+      if (entry.llm && !entry.llm.error) return true;
+    }
+    return false;
+  }
+
   function render() {
     const tot = filtered.length;
     const pages = Math.max(1, Math.ceil(tot / ROWS_PER_PAGE));
     if (pg >= pages) pg = pages - 1;
     const items = filtered.slice(pg * ROWS_PER_PAGE, (pg + 1) * ROWS_PER_PAGE);
+
+    // Show/hide AI Score column based on whether LLM has produced results
+    const showAiCol = hasLlmScores();
+    const aiTh = dash.querySelector('#jcc-th-ai');
+    if (aiTh) aiTh.style.display = showAiCol ? '' : 'none';
+    const colSpan = showAiCol ? 9 : 8;
 
     rcEl.textContent = loading
       ? `Loaded ${all.length} (fetching\u2026) \u2014 ${tot} shown`
@@ -665,7 +679,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           `<td class="jcc-cuc">${useCaseCell}</td>`,
           `<td class="jcc-cd">${fmtDate(j.metadata?.createdAt)}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
-          `<td class="jcc-cai">${badge}</td>`,
+          showAiCol ? `<td class="jcc-cai">${badge}</td>` : '',
           `<td class="jcc-cgo"><a class="jcc-go-btn" href="${esc(journeyUrl)}" target="_blank" rel="noopener noreferrer">&#x1F517; Go</a></td>`,
         ].join('');
         tb.appendChild(tr);
@@ -673,7 +687,12 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           expanded = expanded === j.id ? null : j.id;
           render();
         });
-        if (isExp) tb.appendChild(mkDetail(j));
+        if (isExp) {
+          const dtr = mkDetail(j);
+          // Keep detail colspan in sync with visible columns
+          dtr.querySelector('td')?.setAttribute('colspan', String(colSpan));
+          tb.appendChild(dtr);
+        }
       });
     }
     renderPag(tot, pages);
