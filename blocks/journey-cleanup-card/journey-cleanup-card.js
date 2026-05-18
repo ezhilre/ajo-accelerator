@@ -674,7 +674,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           : (pending ? '<span class="jcc-cuc-pending">\u23F3</span>' : `<span class="jcc-cuc-empty">\u2753 Unclassified <i class="jcc-info-icon" data-tip="Unable to determine use case" aria-label="Use case info">i</i></span>`);
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
-          `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span>${isDefaultJourneyName(j.name) ? ' <span class="jcc-default-badge" title="AJO default name">default</span>' : ''}</td>`,
+          `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
           `<td><span class="jcc-st jcc-st-${sc}">${esc(j.status || '\u2014')}</span></td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.createdBy || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cuc">${useCaseCell}</td>`,

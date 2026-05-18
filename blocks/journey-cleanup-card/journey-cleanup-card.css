@@ -787,7 +787,7 @@ body.jcc-no-scroll {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
-  min-width: 900px;
+  min-width: 1100px;
 }
 
 .jcc-tbl thead tr {
@@ -838,7 +838,7 @@ body.jcc-no-scroll {
 
 .jcc-tog:hover { background: #eaeaea; border-color: #b3b3b3; }
 
-.jcc-cn { max-width: 280px; }
+.jcc-cn { max-width: 300px; }
 .jcc-cn span {
   display: block;
   overflow: hidden;
@@ -848,7 +848,7 @@ body.jcc-no-scroll {
 }
 
 .jcc-cd { white-space: nowrap; font-size: 0.8rem; color: #6e6e6e; }
-.jcc-cp { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcc-cp { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jcc-cc { text-align: center; }
 
 /* Go column */
@@ -1476,7 +1476,7 @@ a.jcc-go-btn:active,
 /* ── Use Case column (table) ─────────────────────────────────────────────── */
 
 .jcc-cuc {
-  max-width: 260px;
+  max-width: 300px;
   vertical-align: middle;
 }
 
@@ -1509,6 +1509,7 @@ a.jcc-go-btn:active,
   gap: 0.3rem;
   color: #b3b3b3;
   font-size: 0.8rem;
+  vertical-align: middle;
 }
 
 /* ── ℹ info icon with CSS tooltip ─────────────────────────────────────── */
@@ -1529,9 +1530,10 @@ a.jcc-go-btn:active,
   cursor: default;
   position: relative;
   flex-shrink: 0;
-  vertical-align: middle;
   line-height: 1;
   user-select: none;
+  vertical-align: middle;
+  align-self: center;
 }
 
 .jcc-info-icon::after {
