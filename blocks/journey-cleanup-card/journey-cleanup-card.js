@@ -83,7 +83,7 @@ function fetchAll(cfg, onChunk, onErr, onDone) {
     const items0 = d0.results || [];
     const total = d0.pagination?.totalCount ?? items0.length;
     const pages = Math.ceil(total / PAGE_SIZE);
-    if (items0.length) { all.push(...items0); onChunk([...items0], [...all], 0); }
+    if (items0.length) { all.push(...items0); onChunk([...items0], [...all], 0, total); }
     if (pages <= 1) { onDone([...all]); return; }
     for (let p = 1; p < pages; p += 1) {
       if (signal.aborted) break;
@@ -92,7 +92,7 @@ function fetchAll(cfg, onChunk, onErr, onDone) {
       const items = d.results || [];
       if (!items.length) break;
       all.push(...items);
-      onChunk([...items], [...all], p);
+      onChunk([...items], [...all], p, total);
     }
     onDone([...all]);
   })();
@@ -982,11 +982,15 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     aiPl.textContent = 'Waiting for fetch\u2026'; aiPf.style.width = '0%';
     fetchCtrl = fetchAll(
       cfg,
-      (chunk, cumul, pageNum) => {
+      (chunk, cumul, pageNum, apiTotal) => {
         totalPages = Math.max(totalPages, pageNum + 1);
         all = cumul;
-        const pct = totalPages > 1 ? Math.min(90, Math.round((pageNum / totalPages) * 85) + 5) : 50;
-        setP(pct, `Page ${pageNum + 1} \u2014 ${cumul.length} fetched\u2026`);
+        const knownTotal = apiTotal || 0;
+        const pct = knownTotal > 0
+          ? Math.min(95, Math.round((cumul.length / knownTotal) * 100))
+          : (totalPages > 1 ? Math.min(90, Math.round((pageNum / totalPages) * 85) + 5) : 50);
+        const totalLabel = knownTotal > 0 ? ` / ${knownTotal}` : '';
+        setP(pct, `\uD83D\uDCE5 ${cumul.length}${totalLabel} loaded\u2026`);
         // Apply rule scores instantly as each chunk arrives
         applyRuleScores(chunk);
         updSummary(); updOwnerFilter(); applyF();
