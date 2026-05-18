@@ -65,7 +65,7 @@ function todayIso() { return new Date().toISOString().slice(0, 10); }
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 async function apiGet(cfg, page, signal) {
-  const f = `status=draft,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
+  const f = `status=draft,failed,stopped,closed,finished,live&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(f)}`;
   // eslint-disable-next-line no-console
   console.log(`[JCC] GET page=${page}`);
@@ -160,7 +160,7 @@ function closeModal() { document.querySelector('.jcc-modal-overlay')?.remove(); 
 
 // Verify credentials by making a lightweight AJO API call (fetch page 0, size 1)
 async function verifyCredentials(c) {
-  const f = `status=draft,failed,stopped,closed&metadata.lastModifiedAt<${todayIso()}`;
+  const f = `status=draft,failed,stopped,closed,finished,live&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=1&page=0&filter=${encodeURIComponent(f)}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${c.token}`, 'x-api-key': c.apiKey, 'x-gw-ims-org-id': c.orgId, 'x-sandbox-name': c.sandbox },
