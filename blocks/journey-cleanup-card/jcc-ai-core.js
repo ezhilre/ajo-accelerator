@@ -66,7 +66,7 @@ export async function fetchJourneyDetail(cfg, id) {
   return res.json();
 }
 
-export async function scoreSingleLLM(journey, proxyUrl) {
+export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 90_000) {
   const enriched = {
     ...journey,
     _daysStale: daysAgoAI(journey.metadata?.lastModifiedAt),
@@ -76,6 +76,7 @@ export async function scoreSingleLLM(journey, proxyUrl) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ journey: enriched }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) { const txt = await res.text().catch(() => ''); throw new Error(`Proxy ${res.status}: ${txt.slice(0, 200)}`); }
   return res.json();
@@ -98,10 +99,16 @@ export async function fetchTokenStats(proxyUrl) {
   } catch (_) { return null; }
 }
 
-export function createAgentPool({ cfg, proxyUrl, concurrency = AI_AGENT_CONCURRENCY, detailCache, onScore, onProgress, onComplete }) {
+const PROXY_DOWN_THRESHOLD = 3; // consecutive failures before declaring proxy down
+
+export function createAgentPool({
+  cfg, proxyUrl, concurrency = AI_AGENT_CONCURRENCY, detailCache,
+  onScore, onProgress, onComplete, onProxyDown,
+}) {
   const queue = [];
   let done = 0; let total = 0; let stopped = false;
   let retireCount = 0; let reviewCount = 0; let keepCount = 0;
+  let consecutiveFails = 0; let proxyDownFired = false;
 
   function tally(rule, llm) {
     const s = llm && !llm.error
@@ -118,7 +125,19 @@ export function createAgentPool({ cfg, proxyUrl, concurrency = AI_AGENT_CONCURRE
       detail = detailCache.has(j.id) ? detailCache.get(j.id) : await fetchJourneyDetail(cfg, j.id);
       detailCache.set(j.id, detail);
     } catch (_) { /* metadata only */ }
-    try { llm = await scoreSingleLLM(detail ? { ...j, ...detail } : j, proxyUrl); } catch (_) { /* rule only */ }
+    try {
+      llm = await scoreSingleLLM(detail ? { ...j, ...detail } : j, proxyUrl);
+      consecutiveFails = 0; // reset on success
+    } catch (e) {
+      consecutiveFails += 1;
+      const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
+      llm = { error: isTimeout ? 'Request timed out — proxy may be overloaded' : e.message };
+      // Detect proxy down after N consecutive failures
+      if (consecutiveFails >= PROXY_DOWN_THRESHOLD && !proxyDownFired && onProxyDown) {
+        proxyDownFired = true;
+        onProxyDown(e.message);
+      }
+    }
     tally(rule, llm);
     done += 1;
     onScore(j.id, rule, llm);
@@ -129,18 +148,21 @@ export function createAgentPool({ cfg, proxyUrl, concurrency = AI_AGENT_CONCURRE
   async function worker() {
     while (queue.length && !stopped) {
       const j = queue.shift();
-      try { await processOne(j); } catch (_) { /* swallow */ }
+      // eslint-disable-next-line no-await-in-loop
+      try { await processOne(j); } catch (_) { /* swallow unexpected errors */ }
     }
   }
 
   return {
     enqueue(journeys) {
-      total = journeys.length; done = 0; retireCount = 0; reviewCount = 0; keepCount = 0; stopped = false;
+      total = journeys.length; done = 0; retireCount = 0; reviewCount = 0; keepCount = 0;
+      stopped = false; consecutiveFails = 0; proxyDownFired = false;
       queue.length = 0; queue.push(...journeys);
       const n = Math.min(concurrency, journeys.length);
       for (let i = 0; i < n; i += 1) worker();
     },
     stop() { stopped = true; queue.length = 0; },
+    resetProxyDown() { consecutiveFails = 0; proxyDownFired = false; },
   };
 }
 

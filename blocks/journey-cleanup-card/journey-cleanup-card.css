@@ -1655,6 +1655,79 @@ a.jcc-go-btn:active,
   margin-right: 0.3rem;
 }
 
+/* ── Proxy-down error banner ─────────────────────────────────────────────── */
+
+.jcc-proxy-down-banner {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  background: #fff8f0;
+  border: 1.5px solid #f4c06f;
+  border-left: 4px solid #e68619;
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(230, 134, 25, 0.12);
+  animation: jcc-slide-down 0.25s ease;
+}
+
+@keyframes jcc-slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.jcc-pdb-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.jcc-pdb-body {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.jcc-pdb-body strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #a85900;
+}
+
+.jcc-pdb-detail {
+  font-size: 0.8rem;
+  color: #6e6e6e;
+  word-break: break-all;
+}
+
+.jcc-pdb-hint {
+  font-size: 0.78rem;
+  color: #4b4b4b;
+  margin-top: 0.1rem;
+}
+
+.jcc-pdb-hint code {
+  background: #f5f5f5;
+  border: 1px solid #e1e1e1;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: #2c2c2c;
+}
+
+.jcc-pdb-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-self: center;
+}
+
 /* responsive */
 @media (max-width: 640px) {
   .jcc-modal-box { padding: 1.25rem; }

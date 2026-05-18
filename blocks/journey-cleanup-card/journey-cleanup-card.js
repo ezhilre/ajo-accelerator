@@ -829,10 +829,64 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     return `${m}m ${rs < 10 ? '0' : ''}${rs}s`;
   }
 
+  // ── Proxy-down error banner ────────────────────────────────────────────────
+
+  let pendingAiTargets = []; // kept for Retry
+
+  function showProxyDownBanner(errMsg) {
+    // Remove any existing banner first
+    dash.querySelector('.jcc-proxy-down-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.className = 'jcc-proxy-down-banner';
+    banner.innerHTML = [
+      '<span class="jcc-pdb-icon">&#x26A0;</span>',
+      '<div class="jcc-pdb-body">',
+      '  <strong>AI proxy stopped responding</strong>',
+      `  <span class="jcc-pdb-detail">${esc(errMsg || 'Connection refused or timed out')}</span>`,
+      '  <span class="jcc-pdb-hint">Restart the proxy: <code>cd ai-proxy &amp;&amp; node server.js</code></span>',
+      '</div>',
+      '<div class="jcc-pdb-actions">',
+      '  <button class="jcc-btn-primary jcc-pdb-retry">&#x21BA; Retry AI</button>',
+      '  <button class="jcc-btn-secondary jcc-pdb-dismiss">&#x2715; Dismiss</button>',
+      '</div>',
+    ].join('');
+
+    // Insert after the unified bar
+    const unifiedBar = dash.querySelector('#jcc-unified-bar');
+    unifiedBar?.insertAdjacentElement('afterend', banner);
+
+    banner.querySelector('.jcc-pdb-retry').addEventListener('click', async () => {
+      banner.remove();
+      // Re-test proxy health before retrying
+      const health = await checkProxyHealth(proxyUrl);
+      if (!health.ok) {
+        updAiStatus(false, `Still offline: ${health.error || 'unreachable'}`);
+        showProxyDownBanner(`Still unreachable: ${health.error || 'unreachable'}`);
+        return;
+      }
+      updAiStatus(true, `Reconnected \u2014 ${health.model || 'unknown model'}`);
+      // Only retry journeys that don't yet have a successful LLM score
+      const remaining = pendingAiTargets.filter((j) => {
+        const e = aiScores.get(j.id);
+        return !e?.llm || e.llm.error;
+      });
+      if (remaining.length) {
+        aiPl.textContent = `\u21BA Retrying LLM on ${remaining.length} remaining journeys\u2026`;
+        startAI(remaining);
+      } else {
+        aiPl.textContent = '\u2705 All journeys already scored.';
+      }
+    });
+
+    banner.querySelector('.jcc-pdb-dismiss').addEventListener('click', () => banner.remove());
+  }
+
   // LLM analysis — runs after fetch completes (if aiEnabled)
   function startAI(targets) {
     if (aiRunning || !targets.length) return;
     aiRunning = true;
+    pendingAiTargets = targets; // save for retry
     const aiStartMs = Date.now();
     aiStopBtn.style.display = 'inline-flex';
     aiCountsEl.style.display = 'flex';
@@ -891,6 +945,14 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
             .then(() => { aiPl.textContent += ' \u2014 \uD83D\uDCBE Saved to cache'; })
             .catch(() => { /* ignore */ });
         }
+      },
+      onProxyDown(errMsg) {
+        aiRunning = false;
+        aiStopBtn.style.display = 'none';
+        aiPl.textContent = `\u26A0 LLM proxy offline \u2014 ${aiScores.size} journeys scored before failure`;
+        updAiStatus(false, 'Proxy offline');
+        showProxyDownBanner(errMsg);
+        render();
       },
     });
     agentPool.enqueue(targets);

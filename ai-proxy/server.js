@@ -599,6 +599,30 @@ function buildPrompt(journey) {
 
   const nodeCount = actions.length + events.length + conditions.length;
 
+  // ── Trim raw nodes for LLM context (keep only meaningful fields) ──────────
+  const NODE_FIELDS = ['id', 'type', 'nodeType', 'actionType', 'name', 'label',
+    'expression', 'channelType', 'waitDuration', 'waitUnit', 'transitions',
+    'eventType', 'segmentId', 'audienceId'];
+  const MAX_NODES = 50;
+  const trimmedNodes = allNodes.length > 0
+    ? allNodes.slice(0, MAX_NODES).map((n) => {
+      const out = {};
+      NODE_FIELDS.forEach((k) => { if (n[k] != null) out[k] = n[k]; });
+      // Trim transitions — only keep type, condition/expression, name
+      if (Array.isArray(out.transitions)) {
+        out.transitions = out.transitions.map((t) => {
+          const tt = {};
+          if (t.type != null) tt.type = t.type;
+          if (t.name != null) tt.name = t.name;
+          if (t.condition != null) tt.condition = t.condition;
+          if (t.expression != null) tt.expression = t.expression;
+          return tt;
+        });
+      }
+      return out;
+    })
+    : [];
+
   // Name-based type hint — strong signal even when structure is empty
   const nameTypeHint = inferJourneyTypeFromName(name);
   const nameHintLine = nameTypeHint
@@ -608,6 +632,11 @@ function buildPrompt(journey) {
   // Structural data availability note
   const structureNote = nodeCount === 0
     ? '⚠ No structural node data available (list-level endpoint) — rely on name, status, tags, and description for classification.'
+    : '';
+
+  // Build raw node section (only when structural data exists)
+  const rawNodeSection = trimmedNodes.length > 0
+    ? `\nRAW NODE LIST (${trimmedNodes.length} of ${allNodes.length} canvas nodes — use for deeper classification):\n${JSON.stringify(trimmedNodes)}\n`
     : '';
 
   return `You are an Adobe Journey Optimizer governance expert reviewing journeys for retirement.
@@ -653,7 +682,7 @@ ${conditionNames.length ? `- Condition names: ${conditionNames.join(' | ')}` : '
 - Has audience/segment: ${audienceId ? 'YES (' + audienceId + ')' : 'No'}
 - Has description: ${description ? 'YES: "' + description.slice(0, 200) + '"' : 'No'}
 - Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
-
+${rawNodeSection}
 SCORING CONTEXT:
 - Score 80-100 = strong candidate for retirement/archiving
 - Score 50-79  = uncertain, needs human review
