@@ -668,9 +668,10 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         const pending = aiRunning && aiEntry && !aiEntry.llm;
         const badge = scoreBadgeHtml(aiEntry?.rule || null, aiEntry?.llm || null, pending);
         const llmData = aiEntry?.llm && !aiEntry.llm.error ? aiEntry.llm : null;
+        const ucTip = llmData ? esc(llmData.useCaseSummary || 'Unable to determine use case') : 'Unable to determine use case';
         const useCaseCell = llmData
-          ? `<div class="jcc-cuc-wrap">${journeyTypeBadgeHtml(llmData)}${llmData.useCaseSummary ? `<span class="jcc-cuc-txt" title="${esc(llmData.useCaseSummary)}">${esc(llmData.useCaseSummary)}</span>` : ''}</div>`
-          : (pending ? '<span class="jcc-cuc-pending">\u23F3</span>' : '<span class="jcc-cuc-empty">\u2014</span>');
+          ? `<div class="jcc-cuc-wrap">${journeyTypeBadgeHtml(llmData)}<i class="jcc-info-icon" data-tip="${ucTip}" aria-label="Use case info">i</i></div>`
+          : (pending ? '<span class="jcc-cuc-pending">\u23F3</span>' : `<span class="jcc-cuc-empty">\u2753 Unclassified <i class="jcc-info-icon" data-tip="Unable to determine use case" aria-label="Use case info">i</i></span>`);
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span>${isDefaultJourneyName(j.name) ? ' <span class="jcc-default-badge" title="AJO default name">default</span>' : ''}</td>`,
@@ -930,7 +931,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         const staleTargets = final.filter((j) => {
           if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
           const s = (j.status || '').toLowerCase();
-          if (s === 'draft' || s === 'failed') return true;
+          if (s === 'draft' || s === 'failed' || s === 'closed' || s === 'stopped') return true;
           if (includeLive && (s === 'live' || s === 'deployed')) return true;
           return false;
         });

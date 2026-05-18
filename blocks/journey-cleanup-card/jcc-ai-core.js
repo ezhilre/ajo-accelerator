@@ -175,8 +175,7 @@ export function scoreBadgeHtml(rule, llm, pending) {
   } else { s = rule.score; label = rule.label; tip = `Rule-based: ${s}/100`; }
   const color = s >= 80 ? 'red' : s >= 50 ? 'yellow' : 'green';
   const icon = color === 'red' ? '\uD83D\uDD34' : color === 'yellow' ? '\uD83D\uDFE1' : '\uD83D\uDFE2';
-  const typeBadge = journeyTypeBadgeHtml(llm);
-  return `${typeBadge}<span class="jcc-score-badge jcc-score-${color}" title="${escAI(tip)}">${icon} ${s}% <span class="jcc-score-lbl">${escAI(label)}</span></span>`;
+  return `<span class="jcc-score-badge jcc-score-${color}" title="${escAI(tip)}">${icon} ${s}% <span class="jcc-score-lbl">${escAI(label)}</span></span>`;
 }
 
 export function aiDetailHtml(rule, llm) {
