@@ -367,61 +367,148 @@ body.jcc-no-scroll {
   font-family: 'Courier New', monospace;
 }
 
-/* summary cards */
+/* ── Summary status cards — circular modern UI ──────────────────────────── */
+
 .jcc-summary {
   display: flex;
-  gap: 0.85rem;
+  gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1.25rem;
+  justify-content: space-around;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem 0;
 }
 
 .jcc-sc {
-  flex: 1;
-  min-width: 110px;
-  background: #fff;
-  border: 1px solid #e1e1e1;
-  border-radius: 6px;
-  padding: 1rem 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.15s, transform 0.15s;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  cursor: default;
+  user-select: none;
 }
 
-.jcc-sc:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+/* The circle itself */
+.jcc-sc-circle {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  border: 3px solid transparent;
 }
 
+.jcc-sc:hover .jcc-sc-circle {
+  transform: translateY(-5px) scale(1.06);
+}
+
+/* Number inside circle */
 .jcc-sn {
-  font-size: 1.875rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 800;
   line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  color: #fff;
 }
 
+/* Tiny label inside circle */
+.jcc-sl-inner {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1;
+}
+
+/* Label below circle */
 .jcc-sl {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6e6e6e;
+  text-align: center;
 }
 
-/* Adobe Spectrum-inspired card accents */
-.jcc-sc-total { border-top: 3px solid #1473e6; }
-.jcc-sc-total .jcc-sn { color: #1473e6; }
-.jcc-sc-live { border-top: 3px solid #2d9d78; }
-.jcc-sc-live .jcc-sn { color: #2d9d78; }
-.jcc-sc-draft { border-top: 3px solid #e68619; }
-.jcc-sc-draft .jcc-sn { color: #e68619; }
-.jcc-sc-failed { border-top: 3px solid #e34850; }
-.jcc-sc-failed .jcc-sn { color: #e34850; }
-.jcc-sc-closed { border-top: 3px solid #747474; }
-.jcc-sc-closed .jcc-sn { color: #747474; }
-.jcc-sc-stopped { border-top: 3px solid #a0a0a0; }
-.jcc-sc-stopped .jcc-sn { color: #a0a0a0; }
+/* ── Per-status circle gradients & glows ────────────────────────────────── */
+
+.jcc-sc-total .jcc-sc-circle {
+  background: linear-gradient(135deg, #1e88e6 0%, #0d5ec7 100%);
+  box-shadow: 0 6px 20px rgba(20, 115, 230, 0.38), 0 2px 6px rgba(20, 115, 230, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.jcc-sc-total:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(20, 115, 230, 0.5), 0 4px 10px rgba(20, 115, 230, 0.3);
+}
+
+.jcc-sc-total .jcc-sl { color: #1473e6; }
+
+.jcc-sc-live .jcc-sc-circle {
+  background: linear-gradient(135deg, #34b88c 0%, #0d7055 100%);
+  box-shadow: 0 6px 20px rgba(45, 157, 120, 0.38), 0 2px 6px rgba(45, 157, 120, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.jcc-sc-live:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(45, 157, 120, 0.5), 0 4px 10px rgba(45, 157, 120, 0.3);
+}
+
+.jcc-sc-live .jcc-sl { color: #0d7055; }
+
+.jcc-sc-draft .jcc-sc-circle {
+  background: linear-gradient(135deg, #f5a623 0%, #c45f00 100%);
+  box-shadow: 0 6px 20px rgba(230, 134, 25, 0.38), 0 2px 6px rgba(230, 134, 25, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.jcc-sc-draft:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(230, 134, 25, 0.5), 0 4px 10px rgba(230, 134, 25, 0.3);
+}
+
+.jcc-sc-draft .jcc-sl { color: #a85900; }
+
+.jcc-sc-failed .jcc-sc-circle {
+  background: linear-gradient(135deg, #f05b61 0%, #b91c22 100%);
+  box-shadow: 0 6px 20px rgba(227, 72, 80, 0.38), 0 2px 6px rgba(227, 72, 80, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.jcc-sc-failed:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(227, 72, 80, 0.5), 0 4px 10px rgba(227, 72, 80, 0.3);
+}
+
+.jcc-sc-failed .jcc-sl { color: #c9252d; }
+
+.jcc-sc-closed .jcc-sc-circle {
+  background: linear-gradient(135deg, #6e6e6e 0%, #3d3d3d 100%);
+  box-shadow: 0 6px 20px rgba(75, 75, 75, 0.35), 0 2px 6px rgba(75, 75, 75, 0.18);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.jcc-sc-closed:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(75, 75, 75, 0.48), 0 4px 10px rgba(75, 75, 75, 0.25);
+}
+
+.jcc-sc-closed .jcc-sl { color: #4b4b4b; }
+
+.jcc-sc-stopped .jcc-sc-circle {
+  background: linear-gradient(135deg, #b0b0b0 0%, #747474 100%);
+  box-shadow: 0 6px 20px rgba(160, 160, 160, 0.35), 0 2px 6px rgba(160, 160, 160, 0.18);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.jcc-sc-stopped:hover .jcc-sc-circle {
+  box-shadow: 0 12px 32px rgba(160, 160, 160, 0.48), 0 4px 10px rgba(160, 160, 160, 0.25);
+}
+
+.jcc-sc-stopped .jcc-sl { color: #5a5a5a; }
 
 /* ── age buckets ─────────────────────────────────────────────────────────── */
 
@@ -1740,9 +1827,11 @@ a.jcc-go-btn:active,
   .jcc-modal-submit { width: 100%; text-align: center; padding: 0.75rem; }
   .jcc-dashboard { padding: 0.75rem; }
   .jcc-header { flex-direction: column; align-items: flex-start; }
-  .jcc-summary { gap: 0.5rem; }
-  .jcc-sc { min-width: 80px; padding: 0.75rem; }
-  .jcc-sn { font-size: 1.5rem; }
+  .jcc-summary { gap: 0.75rem; justify-content: center; }
+  .jcc-sc-circle { width: 76px; height: 76px; }
+  .jcc-sn { font-size: 1.4rem; }
+  .jcc-sl-inner { font-size: 0.55rem; }
+  .jcc-sl { font-size: 0.65rem; }
   .jcc-filter-row { flex-direction: column; align-items: flex-start; }
   .jcc-rc { margin-left: 0; }
   .jcc-pag { flex-direction: column; align-items: flex-start; }
