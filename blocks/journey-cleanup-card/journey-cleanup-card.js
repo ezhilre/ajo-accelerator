@@ -32,11 +32,11 @@ function daysAgo(iso) {
 }
 
 function sClass(status) {
-  return ({ live: 'live', draft: 'draft', failed: 'failed', closed: 'closed', finished: 'closed', stopped: 'stopped' })[(status || '').toLowerCase()] || 'unknown';
+  return ({ live: 'live', deployed: 'live', draft: 'draft', failed: 'failed', closed: 'closed', finished: 'closed', stopped: 'stopped' })[(status || '').toLowerCase()] || 'unknown';
 }
 
 function statusLabel(status) {
-  return ({ live: 'Deployed', closed: 'Finished', finished: 'Finished', stopped: 'Stopped', draft: 'Draft', failed: 'Failed' })[(status || '').toLowerCase()] || (status || '\u2014');
+  return ({ live: 'Deployed', deployed: 'Deployed', closed: 'Finished', finished: 'Finished', stopped: 'Stopped', draft: 'Draft', failed: 'Failed' })[(status || '').toLowerCase()] || (status || '\u2014');
 }
 
 function esc(str) {
@@ -65,7 +65,7 @@ function todayIso() { return new Date().toISOString().slice(0, 10); }
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 async function apiGet(cfg, page, signal) {
-  const f = `status=draft,failed,stopped,closed,finished,live&metadata.lastModifiedAt<${todayIso()}`;
+  const f = `status=draft,failed,stopped,closed,finished,live,deployed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=${PAGE_SIZE}&page=${page}&filter=${encodeURIComponent(f)}`;
   // eslint-disable-next-line no-console
   console.log(`[JCC] GET page=${page}`);
@@ -160,7 +160,7 @@ function closeModal() { document.querySelector('.jcc-modal-overlay')?.remove(); 
 
 // Verify credentials by making a lightweight AJO API call (fetch page 0, size 1)
 async function verifyCredentials(c) {
-  const f = `status=draft,failed,stopped,closed,finished,live&metadata.lastModifiedAt<${todayIso()}`;
+  const f = `status=draft,failed,stopped,closed,finished,live,deployed&metadata.lastModifiedAt<${todayIso()}`;
   const url = `${AJO_BASE}?pageSize=1&page=0&filter=${encodeURIComponent(f)}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${c.token}`, 'x-api-key': c.apiKey, 'x-gw-ims-org-id': c.orgId, 'x-sandbox-name': c.sandbox },
@@ -827,6 +827,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     } else {
       updAiStatus(false, `Offline: ${health.error || 'unreachable'}`);
     }
+    return health;
   }
 
   // ── Timing helpers ─────────────────────────────────────────────────────────
@@ -1086,9 +1087,17 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         });
 
         if (aiEnabled) {
-          // LLM phase starts automatically after fetch
-          aiPl.textContent = `\uD83E\uDD16 Fetch done \u2014 starting LLM on ${staleTargets.length} journeys\u2026`;
-          testProxy().then(() => startAI(staleTargets));
+          // LLM phase starts automatically after fetch — but only if proxy is reachable
+          aiPl.textContent = `\uD83E\uDD16 Checking proxy before starting LLM\u2026`;
+          testProxy().then((health) => {
+            if (!health.ok) {
+              aiPl.textContent = '\u26A0 AI proxy is offline \u2014 LLM scoring skipped.';
+              showProxyDownBanner(health.error || 'Connection refused or unreachable');
+              return;
+            }
+            aiPl.textContent = `\uD83E\uDD16 Fetch done \u2014 starting LLM on ${staleTargets.length} journeys\u2026`;
+            startAI(staleTargets);
+          });
         } else {
           // Rule-only mode: show instant summary
           let retire = 0; let review = 0; let keep = 0;

@@ -216,6 +216,37 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(requestLogger);
 
+// ── Ollama availability tracking ──────────────────────────────────────────────
+let ollamaOnline = false;
+let ollamaLastChecked = null;
+const OLLAMA_CHECK_INTERVAL_MS = 15_000; // check every 15 s
+
+async function checkOllamaAvailability() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5_000);
+    const r = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: ctrl.signal });
+    clearTimeout(t);
+    const wasOffline = !ollamaOnline;
+    ollamaOnline = r.ok;
+    ollamaLastChecked = new Date().toISOString();
+    if (wasOffline && ollamaOnline) {
+      log('info', '🦙 Ollama came online', { url: OLLAMA_BASE });
+    }
+  } catch (_) {
+    const wasOnline = ollamaOnline;
+    ollamaOnline = false;
+    ollamaLastChecked = new Date().toISOString();
+    if (wasOnline) {
+      log('warn', '🦙 Ollama went offline — proxy requests will be rejected', { url: OLLAMA_BASE });
+    }
+  }
+}
+
+// Run immediately then on interval
+checkOllamaAvailability();
+setInterval(checkOllamaAvailability, OLLAMA_CHECK_INTERVAL_MS);
+
 // ── Token usage counters (session-level, reset on server restart) ─────────────
 const tokenStats = {
   totalRequests: 0,
@@ -715,27 +746,40 @@ Return ONLY valid JSON (no markdown fences, no explanation outside the JSON obje
 // ── /health ───────────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
   const start = Date.now();
-  try {
-    const r = await fetch(`${OLLAMA_BASE}/api/tags`);
-    const data = await r.json();
-    const models = (data.models || []).map((m) => m.name);
-    const ms = Date.now() - start;
-    log('info', '🩺 Health check', {
-      ollama: 'connected',
-      model: MODEL,
-      available_models: models.join(',') || '(none)',
-      ms: `${ms}ms`,
-    });
-    res.json({ status: 'ok', model: MODEL, ollama: 'connected', availableModels: models });
-  } catch (e) {
-    const ms = Date.now() - start;
-    log('error', '🩺 Health check failed — Ollama unreachable', { error: e.message, ms: `${ms}ms` });
-    res.status(503).json({ status: 'error', model: MODEL, ollama: 'unreachable', error: e.message });
+  // Force a live probe so /health always reflects current state
+  await checkOllamaAvailability();
+  const ms = Date.now() - start;
+  if (ollamaOnline) {
+    try {
+      const r = await fetch(`${OLLAMA_BASE}/api/tags`);
+      const data = await r.json();
+      const models = (data.models || []).map((m) => m.name);
+      log('info', '🩺 Health check', {
+        ollama: 'connected',
+        model: MODEL,
+        available_models: models.join(',') || '(none)',
+        ms: `${ms}ms`,
+      });
+      return res.json({ status: 'ok', model: MODEL, ollama: 'connected', availableModels: models, lastChecked: ollamaLastChecked });
+    } catch (e) {
+      // fall through
+    }
   }
+  log('error', '🩺 Health check failed — Ollama unreachable', { ms: `${ms}ms` });
+  res.status(503).json({ status: 'error', model: MODEL, ollama: 'unreachable', lastChecked: ollamaLastChecked });
 });
 
 // ── /score  (single journey) ──────────────────────────────────────────────────
 app.post('/score', async (req, res) => {
+  if (!ollamaOnline) {
+    log('warn', '/score — rejected: Ollama is offline', { url: OLLAMA_BASE, lastChecked: ollamaLastChecked });
+    return res.status(503).json({
+      error: 'AI backend (Ollama) is currently offline. Please start Ollama and try again.',
+      ollama: 'unreachable',
+      lastChecked: ollamaLastChecked,
+    });
+  }
+
   const journey = req.body?.journey;
   if (!journey || !journey.id) {
     log('warn', '/score — missing journey payload');
@@ -817,6 +861,15 @@ app.post('/score', async (req, res) => {
 
 // ── /score/batch  (up to 10 journeys) ────────────────────────────────────────
 app.post('/score/batch', async (req, res) => {
+  if (!ollamaOnline) {
+    log('warn', '/score/batch — rejected: Ollama is offline', { url: OLLAMA_BASE, lastChecked: ollamaLastChecked });
+    return res.status(503).json({
+      error: 'AI backend (Ollama) is currently offline. Please start Ollama and try again.',
+      ollama: 'unreachable',
+      lastChecked: ollamaLastChecked,
+    });
+  }
+
   const journeys = req.body?.journeys;
   if (!Array.isArray(journeys) || !journeys.length) {
     log('warn', '/score/batch — missing journeys array');
