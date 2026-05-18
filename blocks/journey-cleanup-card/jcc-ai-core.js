@@ -4,7 +4,7 @@
 
 const AJO_BASE_AI = 'https://platform.adobe.io/ajo/journey';
 const AI_AGENT_CONCURRENCY = 4;
-const DEFAULT_NAME_RE = /^Journey[\s\-_0-9a-zA-Z]*$/i;
+const DEFAULT_NAME_RE = /^Journey\s*[\-_]?\s*\d+\s*(v\d+)?$/i;
 
 export function isDefaultJourneyName(name) {
   return !!name && DEFAULT_NAME_RE.test(name.trim());
@@ -46,7 +46,6 @@ export function computeRuleScore(journey) {
   else if (status === 'stopped' || status === 'closed') { score += 8; signals.push({ label: `Status: ${status}`, points: 8, type: 'ok' }); }
 
   if (version <= 1) { score += 8; signals.push({ label: 'Version 1 (never iterated)', points: 8, type: 'ok' }); }
-  if (createdBy && modifiedBy && createdBy === modifiedBy) { score += 8; signals.push({ label: 'Single owner (possible orphan)', points: 8, type: 'ok' }); }
 
   const s = Math.min(100, score);
   const label = s >= 80 ? 'Safe to Retire' : s >= 50 ? 'Review First' : 'Likely Active';

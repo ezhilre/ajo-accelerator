@@ -99,6 +99,57 @@ function fetchAll(cfg, onChunk, onErr, onDone) {
   return ctrl;
 }
 
+// ─── tip popover ──────────────────────────────────────────────────────────────
+
+function closeTipPopover() { document.querySelector('.jcc-tip-popover')?.remove(); }
+
+function showTipPopover(iconEl, tipText) {
+  // Close any existing popover first
+  closeTipPopover();
+
+  const pop = document.createElement('div');
+  pop.className = 'jcc-tip-popover';
+  pop.setAttribute('role', 'tooltip');
+  pop.innerHTML = `
+    <div class="jcc-tip-popover-hdr">
+      <span class="jcc-tip-popover-title">&#x2139; Use Case Info</span>
+      <button class="jcc-tip-popover-close" aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="jcc-tip-popover-body">${tipText}</div>
+  `;
+  document.body.appendChild(pop);
+
+  // Position: prefer above the icon, fall back to below if not enough space
+  const rect = iconEl.getBoundingClientRect();
+  const popW = 280;
+  const popH = pop.offsetHeight || 100;
+  const margin = 8;
+
+  let top = rect.top - popH - margin;
+  if (top < 8) top = rect.bottom + margin; // flip to below
+  let left = rect.left + rect.width / 2 - popW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
+
+  // Close on button click
+  pop.querySelector('.jcc-tip-popover-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeTipPopover();
+  });
+
+  // Close when clicking outside
+  function onOutsideClick(e) {
+    if (!pop.contains(e.target) && e.target !== iconEl) {
+      closeTipPopover();
+      document.removeEventListener('click', onOutsideClick, true);
+    }
+  }
+  // Defer so the current click doesn't immediately close it
+  setTimeout(() => document.addEventListener('click', onOutsideClick, true), 0);
+}
+
 // ─── modal ────────────────────────────────────────────────────────────────────
 
 function closeModal() { document.querySelector('.jcc-modal-overlay')?.remove(); document.body.classList.remove('jcc-no-scroll'); }
@@ -334,7 +385,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   const aiSaved = getAiSettings();
   let aiEnabled = !!aiSaved.enabled;
-  let includeLive = !!aiSaved.includeLive;
+  let includeLive = false; // always defaults OFF — not persisted across sessions
   let proxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
   // Hydrate from cache if provided; otherwise start empty
   const aiScores = initialScores || new Map();
@@ -503,6 +554,15 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   const aiCountsEl = dash.querySelector('#jcc-ai-counts');
   const aiPf = dash.querySelector('#jcc-ai-pf');
   const aiPl = dash.querySelector('#jcc-ai-pl');
+
+  // ── info icon popover — event delegation on tbody ──────────────────────────
+  tb.addEventListener('click', (e) => {
+    const icon = e.target.closest('.jcc-info-icon');
+    if (!icon) return;
+    e.stopPropagation();
+    const tip = icon.getAttribute('data-tip') || '';
+    showTipPopover(icon, tip);
+  });
 
   // ── summary ────────────────────────────────────────────────────────────────
 
@@ -840,19 +900,19 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   aiChk.addEventListener('change', () => {
     aiEnabled = aiChk.checked;
-    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
+    saveAiSettings({ enabled: aiEnabled, proxyUrl });
     if (aiEnabled) testProxy();
     render();
   });
 
   aiLiveChk.addEventListener('change', () => {
     includeLive = aiLiveChk.checked;
-    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
+    // not persisted — resets to false on next page load
   });
 
   aiUrlEl.addEventListener('change', () => {
     proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
-    saveAiSettings({ enabled: aiEnabled, includeLive, proxyUrl });
+    saveAiSettings({ enabled: aiEnabled, proxyUrl });
   });
 
   aiHealthBtn.addEventListener('click', () => { proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001'; testProxy(); });

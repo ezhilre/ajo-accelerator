@@ -271,6 +271,7 @@ async function callOllama(prompt, journeyId) {
     model: MODEL,
     prompt_chars: prompt.length,
   });
+  log('info', '🦙 Ollama prompt text', { journeyId, prompt });
 
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
@@ -353,6 +354,131 @@ function extractJson(raw, journeyId) {
   return null;
 }
 
+// ── Journey type name-based inference ────────────────────────────────────────
+function inferJourneyTypeFromName(name) {
+  const n = name || '';
+  if (/abandon.?cart|cart.?abandon/i.test(n)) return 'Abandoned Cart';
+  if (/\bonboard/i.test(n)) return 'Onboarding';
+  if (/\bwelcome\b/i.test(n)) return 'Welcome';
+  if (/re.?engag|win.?back|laps|reactivat/i.test(n)) return 'Re-engagement';
+  if (/\bretention\b|\bchurn\b/i.test(n)) return 'Retention';
+  if (/transact|receipt|confirm|order.?confirm/i.test(n)) return 'Transactional';
+  if (/\bpromo\b|campaign|offer|discount|sale\b/i.test(n)) return 'Promotional';
+  if (/\btest\b|\bpoc\b|\bdemo\b|\bsandbox\b|\bqa\b|\buat\b/i.test(n)) return 'Test/POC';
+  return null;
+}
+
+// ── Canvas node extractor ─────────────────────────────────────────────────────
+// AJO Journey Detail API returns nodes in various structures depending on version:
+//   • journey.canvas.nodes[]  with node.type / node.nodeType
+//   • journey.nodes[]         (some API versions)
+//   • journey.actions[] / journey.events[] / journey.conditions[]  (pre-processed)
+// We normalise all of them into three flat arrays.
+
+const ACTION_TYPES = /action|message|email_message|email|sms|push|custom_action|custom|wait|timer|channel|inapp|iam|contentcard|content.?card|directmail|web.?action|code.?based/i;
+const EVENT_TYPES  = /^(unitary_event|read_segment|audience_entry|event|trigger|audience|entry|segment)/i;
+const COND_TYPES   = /^condition/i;
+const END_TYPES    = /^end$/i;
+
+function extractNodes(journey) {
+  // 1) Already pre-classified arrays (from older proxy versions / test mocks)
+  if (
+    (journey.actions && journey.actions.length)
+    || (journey.events && journey.events.length)
+    || (journey.conditions && journey.conditions.length)
+  ) {
+    return {
+      actions: journey.actions || [],
+      events: journey.events || [],
+      conditions: journey.conditions || [],
+      allNodes: [],
+    };
+  }
+
+  // 2) Flat node list at journey.nodes  or  journey.canvas.nodes
+  let rawNodes = [];
+  if (Array.isArray(journey.canvas?.nodes) && journey.canvas.nodes.length) {
+    rawNodes = journey.canvas.nodes;
+  } else if (Array.isArray(journey.nodes) && journey.nodes.length) {
+    rawNodes = journey.nodes;
+  } else if (journey.canvas?.nodes && typeof journey.canvas.nodes === 'object') {
+    // Some API versions return nodes as a keyed object { nodeId: nodeObj, … }
+    rawNodes = Object.values(journey.canvas.nodes);
+  }
+
+  if (rawNodes.length) {
+    const typeOf = (n) => (n.type || n.nodeType || n.actionType || n.eventType || '').toLowerCase();
+    // End nodes should not be counted in any category
+    const nonEnd     = rawNodes.filter((n) => !END_TYPES.test(typeOf(n)));
+    const events     = nonEnd.filter((n) => EVENT_TYPES.test(typeOf(n)));
+    const conditions = nonEnd.filter((n) => COND_TYPES.test(typeOf(n)));
+    const actions    = nonEnd.filter((n) => !EVENT_TYPES.test(typeOf(n)) && !COND_TYPES.test(typeOf(n)));
+    log('debug', '🗂 Canvas nodes extracted', {
+      total: rawNodes.length,
+      non_end: nonEnd.length,
+      actions: actions.length,
+      events: events.length,
+      conditions: conditions.length,
+    });
+    return { actions, events, conditions, allNodes: rawNodes };
+  }
+
+  // 3) Nothing found — return empty (list-level endpoint limitation)
+  return { actions: [], events: [], conditions: [], allNodes: [] };
+}
+
+// ── Extract audience names from condition expressions ─────────────────────────
+// Finds inAudience("Audience Name") patterns in condition node expressions
+function extractAudienceNames(conditions) {
+  const names = new Set();
+  conditions.forEach((node) => {
+    // Check transitions for condition expressions
+    const transitions = node.transitions || [];
+    transitions.forEach((t) => {
+      if (t.expression) {
+        const matches = t.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi);
+        for (const m of matches) names.add(m[1]);
+      }
+    });
+    // Also check expression directly on node
+    if (node.expression) {
+      const matches = node.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi);
+      for (const m of matches) names.add(m[1]);
+    }
+  });
+  return [...names];
+}
+
+// ── Extract event trigger type from entry event nodes ─────────────────────────
+function extractTriggerInfo(events) {
+  if (!events.length) return null;
+  const trigger = events[0];
+  const type = (trigger.type || trigger.nodeType || '').toLowerCase();
+  const name = trigger.name || '';
+  if (type === 'read_segment' || type === 'audience_entry') return `Audience-based (read segment): "${name}"`;
+  if (type === 'unitary_event') return `Event-triggered (unitary): "${name}"`;
+  return `"${name}" (type: ${type})`;
+}
+
+// ── Extract channel summary from action nodes (by node type) ──────────────────
+function extractChannelSummary(actions) {
+  const typeOf = (n) => (n.type || n.nodeType || n.actionType || '').toLowerCase();
+  const emailCount       = actions.filter((a) => /email_message|^email$/i.test(typeOf(a))).length;
+  const smsCount         = actions.filter((a) => /\bsms\b/i.test(typeOf(a))).length;
+  const pushCount        = actions.filter((a) => /\bpush\b/i.test(typeOf(a))).length;
+  const inAppCount       = actions.filter((a) => /inapp|in.app|\biam\b/i.test(typeOf(a))).length;
+  const contentCardCount = actions.filter((a) => /content.?card/i.test(typeOf(a))).length;
+  const directMailCount  = actions.filter((a) => /direct.?mail/i.test(typeOf(a))).length;
+  const webCount         = actions.filter((a) => /web.?action|\bweb\b/i.test(typeOf(a))).length;
+  const codeBasedCount   = actions.filter((a) => /code.?based/i.test(typeOf(a))).length;
+  const timerCount       = actions.filter((a) => /\btimer\b|\bwait\b/i.test(typeOf(a))).length;
+  const customCount      = actions.filter((a) => /custom_action|\bcustom\b/i.test(typeOf(a))).length;
+  return {
+    emailCount, smsCount, pushCount, inAppCount, contentCardCount,
+    directMailCount, webCount, codeBasedCount, timerCount, customCount,
+  };
+}
+
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(journey) {
   const meta = journey.metadata || {};
@@ -364,58 +490,195 @@ function buildPrompt(journey) {
   const createdAt = meta.createdAt ? meta.createdAt.slice(0, 10) : 'unknown';
   const modifiedBy = meta.lastModifiedBy || 'unknown';
   const modifiedAt = meta.lastModifiedAt ? meta.lastModifiedAt.slice(0, 10) : 'unknown';
+  const lastDeployedBy = meta.lastDeployedBy || '';
+  const lastDeployedAt = meta.lastDeployedAt ? meta.lastDeployedAt.slice(0, 10) : '';
   const isDefaultName = journey._isDefaultName ? 'YES — user never renamed it (strong abandonment signal)' : 'No';
 
-  const actions = journey.actions || [];
-  const events = journey.events || [];
-  const conditions = journey.conditions || [];
-  const tags = journey.tags || [];
+  // ── Extra journey configuration fields ────────────────────────────────────
+  const sandboxName = journey.sandboxName || journey.sandbox || '';
+  const category = journey.category || '';
+  // Journey type (unitary = event-triggered, read_segment = audience batch)
+  const journeyApiType = journey.type || '';
+
+  // Schedule — AJO API uses startDate/timezone (not startTime/start)
+  const sched = journey.schedule || {};
+  const schedStart = sched.startDate
+    ? String(sched.startDate).slice(0, 10)
+    : (sched.startTime ? String(sched.startTime).slice(0, 10) : (sched.start ? String(sched.start).slice(0, 10) : ''));
+  const schedEnd = sched.endDate
+    ? String(sched.endDate).slice(0, 10)
+    : (sched.endTime ? String(sched.endTime).slice(0, 10) : (sched.end ? String(sched.end).slice(0, 10) : ''));
+  const schedTimezone = sched.timezone || sched.timeZone || journey.timeZone || '';
+  const schedUseProfileTz = sched.useProfileTimezone != null ? sched.useProfileTimezone : null;
+  const schedType = sched.type || sched.scheduleType || '';
+  const schedParts = [
+    schedType || (schedStart ? 'scheduled' : ''),
+    schedStart ? `starts ${schedStart}` : '',
+    schedEnd ? `ends ${schedEnd}` : '',
+    schedTimezone ? `tz: ${schedTimezone}` : '',
+    schedUseProfileTz === true ? 'uses profile timezone' : '',
+  ].filter(Boolean);
+  const schedLine = schedParts.length ? schedParts.join(', ') : 'none / unknown';
+
+  // Reentrance policy
+  const reentrance = journey.reentrance || {};
+  const reentPolicy = reentrance.policy || '';
+  const reentDuration = reentrance.durationInSecs != null ? `${reentrance.durationInSecs}s window` : '';
+  const reentLine = reentPolicy
+    ? `${reentPolicy}${reentDuration ? ' (' + reentDuration + ')' : ''}`
+    : 'none / unknown';
+
+  // Entry configuration
+  const entryCfg = journey.entryConfiguration || journey.entryConfig || {};
+  const entryLimit = entryCfg.entryLimit != null ? String(entryCfg.entryLimit) : '';
+  const reEntryCriteria = entryCfg.reEntryCriteria || entryCfg.reentry || '';
+  const entryLine = [
+    entryLimit ? `limit: ${entryLimit}` : '',
+    reEntryCriteria ? `re-entry criteria: ${reEntryCriteria}` : '',
+  ].filter(Boolean).join(', ') || 'none / unknown';
+
+  // Exit criteria
+  const exitArr = Array.isArray(journey.exitCriteria) ? journey.exitCriteria : (journey.exitCriteria ? [journey.exitCriteria] : []);
+  const exitLine = exitArr.length
+    ? exitArr.map((x) => x.type || x.condition || JSON.stringify(x)).join('; ')
+    : 'none / unknown';
+
+  // Timeouts
+  const timeouts = journey.timeouts || {};
+  const timeoutLine = (timeouts.actionExecution != null || timeouts.entityEnrichment != null)
+    ? `action: ${timeouts.actionExecution || '?'}s, enrichment: ${timeouts.entityEnrichment || '?'}s`
+    : '';
+
+  const { actions, events, conditions, allNodes } = extractNodes(journey);
+
+  // Safely serialize tags — AJO returns tag objects {id, name}, not plain strings
+  const rawTags = journey.tags || [];
+  const tagNames = rawTags
+    .map((t) => {
+      if (typeof t === 'string') return t;
+      // Only use name/label/title if non-null and non-empty
+      return (t.name && t.name.trim()) || (t.label && t.label.trim()) || (t.title && t.title.trim()) || null;
+    })
+    .filter(Boolean);
+
   const description = journey.description || '';
-  const audienceId = journey.audienceId || '';
+
+  // audienceId may live at top level or inside a canvas read-segment node
+  const audienceId = journey.audienceId
+    || journey.segmentId
+    || journey.segment?.id
+    || (events.find((e) => e.segmentId || e.audienceId) || {}).segmentId
+    || (events.find((e) => e.segmentId || e.audienceId) || {}).audienceId
+    || '';
+
+  // ── Channel counts using improved extractor ────────────────────────────────
+  const {
+    emailCount, smsCount, pushCount, inAppCount, contentCardCount,
+    directMailCount, webCount, codeBasedCount, timerCount, customCount,
+  } = extractChannelSummary(actions);
+
+  // ── Audience names from condition expressions ──────────────────────────────
+  // Scan all nodes (conditions have transitions with expressions)
+  const allForAudience = allNodes.length ? allNodes : [...actions, ...events, ...conditions];
+  const audienceNames = extractAudienceNames(allForAudience);
+
+  // ── Entry trigger info ─────────────────────────────────────────────────────
+  const triggerInfo = extractTriggerInfo(events);
+
+  // ── Condition names (the business logic labels) ────────────────────────────
+  const conditionNames = conditions
+    .map((c) => c.name || '')
+    .filter(Boolean)
+    .slice(0, 10); // cap at 10
+
+  // ── Action node names (email/custom action names) ─────────────────────────
+  const actionNames = actions
+    .map((a) => a.name || '')
+    .filter((n) => n && !/^(wait|timer)/i.test(n))
+    .slice(0, 8);
+
   const nodeCount = actions.length + events.length + conditions.length;
-  const emailCount = actions.filter((a) => (a.type || '').toLowerCase().includes('email')).length;
-  const smsCount = actions.filter((a) => (a.type || '').toLowerCase().includes('sms')).length;
-  const waitCount = actions.filter((a) => (a.type || '').toLowerCase().includes('wait')).length;
+
+  // Name-based type hint — strong signal even when structure is empty
+  const nameTypeHint = inferJourneyTypeFromName(name);
+  const nameHintLine = nameTypeHint
+    ? `- Journey type inferred from name: "${nameTypeHint}" (use this as strong signal)`
+    : '- Journey type inferred from name: unclear — use other signals';
+
+  // Structural data availability note
+  const structureNote = nodeCount === 0
+    ? '⚠ No structural node data available (list-level endpoint) — rely on name, status, tags, and description for classification.'
+    : '';
 
   return `You are an Adobe Journey Optimizer governance expert reviewing journeys for retirement.
 
 JOURNEY METADATA:
 - Name: "${name}"
 - Status: ${status} | Version: ${version} | Days stale: ${daysStale}
+- Journey execution type: ${journeyApiType || 'unknown'} (unitary = event-triggered; read_segment = audience batch)
 - Created by: ${createdBy} on ${createdAt}
 - Last modified by: ${modifiedBy} on ${modifiedAt}
+${lastDeployedBy ? `- Last deployed by: ${lastDeployedBy} on ${lastDeployedAt}` : ''}
 - Name is AJO default (never renamed by user): ${isDefaultName}
+${nameHintLine}
+${sandboxName ? `- Sandbox: ${sandboxName}` : ''}
+${category ? `- Category: ${category}` : ''}
+
+JOURNEY CONFIGURATION:
+- Schedule: ${schedLine}
+- Re-entrance policy: ${reentLine}
+- Entry configuration: ${entryLine}
+- Exit criteria: ${exitLine}
+${timeoutLine ? `- Timeouts: ${timeoutLine}` : ''}
 
 JOURNEY STRUCTURE:
-- Total nodes: ${nodeCount}
-- Actions: ${actions.length} total (emails: ${emailCount}, SMS: ${smsCount}, waits: ${waitCount})
-- Entry events/triggers: ${events.length}
+- Total non-end nodes: ${nodeCount}${structureNote ? '\n  ' + structureNote : ''}
+- Entry trigger: ${triggerInfo || 'none / unknown'}
+- Actions: ${actions.length} total (${[
+    emailCount       ? `email: ${emailCount}`              : '',
+    smsCount         ? `SMS: ${smsCount}`                  : '',
+    pushCount        ? `push: ${pushCount}`                : '',
+    inAppCount       ? `in-app: ${inAppCount}`             : '',
+    contentCardCount ? `content card: ${contentCardCount}` : '',
+    directMailCount  ? `direct mail: ${directMailCount}`   : '',
+    webCount         ? `web: ${webCount}`                  : '',
+    codeBasedCount   ? `code-based: ${codeBasedCount}`     : '',
+    timerCount       ? `timer/wait: ${timerCount}`         : '',
+    customCount      ? `custom: ${customCount}`            : '',
+  ].filter(Boolean).join(', ') || 'none'})
+${actionNames.length ? `- Action names: ${actionNames.join(' | ')}` : ''}
 - Conditions/branches: ${conditions.length}
+${conditionNames.length ? `- Condition names: ${conditionNames.join(' | ')}` : ''}
+- Audience segments checked in conditions: ${audienceNames.length ? audienceNames.join(', ') : 'none detected'}
 - Has audience/segment: ${audienceId ? 'YES (' + audienceId + ')' : 'No'}
-- Has description: ${description ? 'YES: "' + description.slice(0, 120) + '"' : 'No'}
-- Tags: ${tags.length ? tags.join(', ') : 'none'}
+- Has description: ${description ? 'YES: "' + description.slice(0, 200) + '"' : 'No'}
+- Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
 
 SCORING CONTEXT:
 - Score 80-100 = strong candidate for retirement/archiving
 - Score 50-79  = uncertain, needs human review
 - Score 0-49   = likely active, keep for now
-- A journey with AJO default name + draft + 90+ days stale is almost certainly safe to retire
-- A journey with real audience, multiple actions, and a descriptive name may be paused for a reason
+- A journey with AJO default name + draft/stopped + 90+ days stale with 0 actions is almost certainly safe to retire
+- A journey with real audience checks, named conditions, multiple actions, and a descriptive name is likely paused for a reason even if stopped
+- Stopped journeys with full node structure (conditions, actions, audience checks) are NOT the same as abandoned/empty journeys
+- When structure data is empty (0 nodes), ALWAYS infer journeyType from the journey NAME and TAGS
+- Only use useCaseSummary = "Unable to determine use case" if the name is completely generic (e.g. "Journey1076") AND tags/description provide no context
 
 TASK: Determine if this journey serves a real business purpose or is safe to retire.
+Consider ALL available signals: name, execution type, node structure, audience segments, condition names, action names, schedule, reentrance policy.
 
 Return ONLY valid JSON (no markdown fences, no explanation outside the JSON object):
 {
   "journeyType": "Welcome|Promotional|Transactional|Re-engagement|Abandoned Cart|Onboarding|Retention|Test/POC|Unknown",
-  "useCaseSummary": "one sentence describing what this journey was designed to do, or 'Unable to determine use case'",
-  "targetAudience": "brief description of who this journey targets, or 'Unknown'",
+  "useCaseSummary": "Infer from name, condition names, audience segments, and action names what this journey does. Be specific.",
+  "targetAudience": "brief description of who this journey targets based on audience segments/conditions/name, or 'Unknown'",
   "businessValue": "low|medium|high",
   "hasBusinessPurpose": true or false,
-  "businessPurpose": "one sentence or 'No identifiable business purpose'",
+  "businessPurpose": "one sentence inferred from structure/name/context, or 'No identifiable business purpose'",
   "retirementScore": 0-100,
   "retirementLabel": "Safe to Retire|Review First|Keep Active",
   "confidence": 0-100,
-  "reasoning": "2-3 sentences explaining your verdict",
+  "reasoning": "2-3 sentences explaining your verdict, referencing the specific signals you used (name, audience checks, condition logic, action count, status, staleness)",
   "recommendation": "Archive|Review with owner|Keep|Contact owner before deleting"
 }`;
 }
