@@ -476,8 +476,9 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '<div class="jcc-summary">',
     '  <div class="jcc-sc jcc-sc-total"><span class="jcc-sn" id="st">\u2014</span><span class="jcc-sl">Total</span></div>',
     '  <div class="jcc-sc jcc-sc-draft"><span class="jcc-sn" id="sd">\u2014</span><span class="jcc-sl">Draft</span></div>',
-    '  <div class="jcc-sc jcc-sc-failed"><span class="jcc-sn" id="sf">\u2014</span><span class="jcc-sl">Failed</span></div>',
-    '  <div class="jcc-sc jcc-sc-closed"><span class="jcc-sn" id="sc">\u2014</span><span class="jcc-sl">Closed/Stopped</span></div>',
+    '  <div class="jcc-sc jcc-sc-live"><span class="jcc-sn" id="sl">\u2014</span><span class="jcc-sl">Live</span></div>',
+    '  <div class="jcc-sc jcc-sc-closed"><span class="jcc-sn" id="sc">\u2014</span><span class="jcc-sl">Finished</span></div>',
+    '  <div class="jcc-sc jcc-sc-stopped"><span class="jcc-sn" id="sk">\u2014</span><span class="jcc-sl">Stopped</span></div>',
     '</div>',
     // Buckets
     '<div class="jcc-buckets">',
@@ -572,12 +573,13 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   function updSummary() {
     const co = cutoff();
-    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co && (j.status || '').toLowerCase() !== 'deployed');
+    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
     const cnt = (s) => stale.filter((j) => (j.status || '').toLowerCase() === s).length;
     dash.querySelector('#st').textContent = stale.length;
     dash.querySelector('#sd').textContent = cnt('draft');
-    dash.querySelector('#sf').textContent = cnt('failed');
-    dash.querySelector('#sc').textContent = cnt('closed') + cnt('finished') + cnt('stopped');
+    dash.querySelector('#sl').textContent = cnt('live') + cnt('deployed');
+    dash.querySelector('#sc').textContent = cnt('closed') + cnt('finished');
+    dash.querySelector('#sk').textContent = cnt('stopped');
     const bCnt = (b) => stale.filter((j) => getBucket(daysAgo(j.metadata?.lastModifiedAt)) === b).length;
     dash.querySelector('#bk-0-30').textContent = bCnt('0-30');
     dash.querySelector('#bk-31-60').textContent = bCnt('31-60');

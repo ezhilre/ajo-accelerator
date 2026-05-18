@@ -420,6 +420,8 @@ body.jcc-no-scroll {
 .jcc-sc-failed .jcc-sn { color: #e34850; }
 .jcc-sc-closed { border-top: 3px solid #747474; }
 .jcc-sc-closed .jcc-sn { color: #747474; }
+.jcc-sc-stopped { border-top: 3px solid #a0a0a0; }
+.jcc-sc-stopped .jcc-sn { color: #a0a0a0; }
 
 /* ── age buckets ─────────────────────────────────────────────────────────── */
 
