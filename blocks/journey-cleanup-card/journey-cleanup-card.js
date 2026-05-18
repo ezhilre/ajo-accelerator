@@ -32,7 +32,11 @@ function daysAgo(iso) {
 }
 
 function sClass(status) {
-  return ({ live: 'live', draft: 'draft', failed: 'failed', closed: 'closed', stopped: 'stopped' })[(status || '').toLowerCase()] || 'unknown';
+  return ({ live: 'live', draft: 'draft', failed: 'failed', closed: 'closed', finished: 'closed', stopped: 'stopped' })[(status || '').toLowerCase()] || 'unknown';
+}
+
+function statusLabel(status) {
+  return ({ live: 'Deployed', closed: 'Finished', finished: 'Finished', stopped: 'Stopped', draft: 'Draft', failed: 'Failed' })[(status || '').toLowerCase()] || (status || '\u2014');
 }
 
 function esc(str) {
@@ -498,7 +502,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '  </div>',
     '  <div class="jcc-filter-row">',
     '    <div class="jcc-fg"><label for="jcc-sf">Status</label>',
-    '      <select id="jcc-sf" class="jcc-sel"><option value="all">All</option><option value="draft">Draft</option><option value="failed">Failed</option><option value="closed">Closed</option><option value="stopped">Stopped</option></select>',
+    '      <select id="jcc-sf" class="jcc-sel"><option value="all">All</option><option value="draft">Draft</option><option value="failed">Failed</option><option value="finished">Finished</option><option value="stopped">Stopped</option></select>',
     '    </div>',
     '    <div class="jcc-fg"><label for="jcc-cb">Owner</label>',
     '      <select id="jcc-cb" class="jcc-sel"><option value="all">All Owners</option></select>',
@@ -573,7 +577,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     dash.querySelector('#st').textContent = stale.length;
     dash.querySelector('#sd').textContent = cnt('draft');
     dash.querySelector('#sf').textContent = cnt('failed');
-    dash.querySelector('#sc').textContent = cnt('closed') + cnt('stopped');
+    dash.querySelector('#sc').textContent = cnt('closed') + cnt('finished') + cnt('stopped');
     const bCnt = (b) => stale.filter((j) => getBucket(daysAgo(j.metadata?.lastModifiedAt)) === b).length;
     dash.querySelector('#bk-0-30').textContent = bCnt('0-30');
     dash.querySelector('#bk-31-60').textContent = bCnt('31-60');
@@ -604,7 +608,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     filtered = all.filter((j) => {
       if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
       if ((j.status || '').toLowerCase() === 'deployed') return false;
-      if (statusQ !== 'all' && (j.status || '').toLowerCase() !== statusQ) return false;
+      if (statusQ !== 'all') {
+        const apiStatus = (j.status || '').toLowerCase();
+        // 'finished' filter value matches both 'closed' and 'finished' API statuses
+        if (statusQ === 'finished' ? (apiStatus !== 'closed' && apiStatus !== 'finished') : apiStatus !== statusQ) return false;
+      }
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (bucketQ !== 'all' && getBucket(daysAgo(j.metadata?.lastModifiedAt)) !== bucketQ) return false;
       if (q) {
@@ -641,7 +649,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       ['Journey ID', `<span class="jcc-mono">${esc(j.id || '\u2014')}</span>`, j.id, true],
       ['IMS Org ID', `<span class="jcc-mono">${esc(j.imsOrgId || '\u2014')}</span>`, null, true],
       ['Name', esc(j.name || '\u2014'), null, false],
-      ['Status', `<span class="jcc-st jcc-st-${sc}">${esc(j.status || '\u2014')}</span>`, null, false],
+      ['Status', `<span class="jcc-st jcc-st-${sc}">${esc(statusLabel(j.status))}</span>`, null, false],
       ['Version', esc(j.version || '\u2014'), null, false],
       ['Sandbox', esc(j.sandboxName || '\u2014'), null, false],
       ['Created By', esc(j.metadata?.createdBy || '\u2014'), null, false],
@@ -735,7 +743,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
-          `<td><span class="jcc-st jcc-st-${sc}">${esc(j.status || '\u2014')}</span></td>`,
+          `<td><span class="jcc-st jcc-st-${sc}">${esc(statusLabel(j.status))}</span></td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.createdBy || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cuc">${useCaseCell}</td>`,
           `<td class="jcc-cd">${fmtDate(j.metadata?.createdAt)}</td>`,
@@ -1070,7 +1078,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         const staleTargets = final.filter((j) => {
           if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
           const s = (j.status || '').toLowerCase();
-          if (s === 'draft' || s === 'failed' || s === 'closed' || s === 'stopped') return true;
+          if (s === 'draft' || s === 'failed' || s === 'closed' || s === 'finished' || s === 'stopped') return true;
           if (includeLive && (s === 'live' || s === 'deployed')) return true;
           return false;
         });
