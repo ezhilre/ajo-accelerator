@@ -3,7 +3,7 @@
 import {
   computeRuleScore, isDefaultJourneyName,
   scoreBadgeHtml, aiDetailHtml, journeyTypeBadgeHtml,
-  checkProxyHealth, createAgentPool,
+  checkProxyHealth, createAgentPool, fetchTokenStats,
 } from './jcc-ai-core.js';
 import {
   saveSnapshot, loadSnapshot, clearSnapshot,
@@ -811,6 +811,19 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         aiPl.textContent = `\u2705 LLM done \u2014 ${targets.length} journeys in ${fmtDur(totalElapsed)} \u00B7 avg ${fmtDur(avgMs)}/journey`;
         aiPf.style.width = '100%';
         render();
+        // Fetch and display token usage
+        fetchTokenStats(proxyUrl).then((stats) => {
+          if (!stats) return;
+          const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+          const tokenInfo = `\uD83D\uDCCA Tokens: ${fmt(stats.totalPromptTokens)} in \u00B7 ${fmt(stats.totalCompletionTokens)} out \u00B7 ${fmt(stats.totalTokens)} total`;
+          aiPl.textContent += ` \u00B7 ${tokenInfo}`;
+          // Show token info in a dedicated element if present
+          const tokenEl = dash.querySelector('#jcc-token-stats');
+          if (tokenEl) {
+            tokenEl.textContent = tokenInfo;
+            tokenEl.style.display = 'inline';
+          }
+        }).catch(() => { /* ignore */ });
         // Auto-save full snapshot after LLM completes
         if (!snapshotSaved) {
           snapshotSaved = true;

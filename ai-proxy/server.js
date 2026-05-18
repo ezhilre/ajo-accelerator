@@ -216,6 +216,14 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(requestLogger);
 
+// ── Token usage counters (session-level, reset on server restart) ─────────────
+const tokenStats = {
+  totalRequests: 0,
+  totalPromptTokens: 0,
+  totalCompletionTokens: 0,
+  startedAt: new Date().toISOString(),
+};
+
 // ── Queue ─────────────────────────────────────────────────────────────────────
 let activeCount = 0;
 const waitQueue = [];
@@ -284,12 +292,25 @@ async function callOllama(prompt, journeyId) {
       eval_count: data.eval_count,
     });
     const responseText = data.response || '';
+    // Accumulate token usage
+    const promptTokens = data.prompt_eval_count || 0;
+    const completionTokens = data.eval_count || 0;
+    tokenStats.totalRequests += 1;
+    tokenStats.totalPromptTokens += promptTokens;
+    tokenStats.totalCompletionTokens += completionTokens;
+    log('info', '🦙 Ollama tokens', {
+      journeyId,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      session_total: tokenStats.totalPromptTokens + tokenStats.totalCompletionTokens,
+    });
     // Log full raw LLM response at debug level
     log('debug', '🦙 Ollama raw response', {
       journeyId,
       raw_response: responseText,
     });
-    return responseText;
+    return { text: responseText, promptTokens, completionTokens };
   } catch (e) {
     const ms = Date.now() - ollamaStart;
     if (e.name === 'AbortError') {
@@ -438,19 +459,19 @@ app.post('/score', async (req, res) => {
   await acquireSlot(id);
   try {
     const prompt = buildPrompt(journey);
-    const raw = await callOllama(prompt, id);
-    const parsed = extractJson(raw, id);
+    const { text: rawText, promptTokens, completionTokens } = await callOllama(prompt, id);
+    const parsed = extractJson(rawText, id);
 
     const totalMs = Date.now() - scoreStart;
 
     // Write per-journey LLM log file
-    writeLlmFile(journey, prompt, raw, parsed, totalMs);
+    writeLlmFile(journey, prompt, rawText, parsed, totalMs);
 
     if (!parsed) {
       log('error', '🎯 Score failed — non-JSON LLM response', { id, ms: `${totalMs}ms` });
       return res.status(422).json({
         error: 'LLM returned non-JSON response',
-        raw: raw.slice(0, 500),
+        raw: rawText.slice(0, 500),
         fallback: true,
       });
     }
@@ -462,6 +483,8 @@ app.post('/score', async (req, res) => {
       score: parsed.retirementScore,
       confidence: parsed.confidence,
       biz_value: parsed.businessValue,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
     });
     // Log full parsed LLM result at debug level
     log('debug', '🎯 Parsed LLM result', {
@@ -480,7 +503,8 @@ app.post('/score', async (req, res) => {
       journeyId: id,
       ...parsed,
       model: MODEL,
-      _raw: raw.slice(0, 200),
+      _raw: rawText.slice(0, 200),
+      _tokens: { prompt: promptTokens, completion: completionTokens, total: promptTokens + completionTokens },
     });
   } catch (e) {
     const totalMs = Date.now() - scoreStart;
@@ -526,12 +550,12 @@ app.post('/score/batch', async (req, res) => {
     await acquireSlot(id);
     try {
       const prompt = buildPrompt(journey);
-      const raw = await callOllama(prompt, id);
-      const parsed = extractJson(raw, id);
+      const { text: rawText, promptTokens, completionTokens } = await callOllama(prompt, id);
+      const parsed = extractJson(rawText, id);
       const itemMs = Date.now() - itemStart;
 
       // Write per-journey LLM log file
-      writeLlmFile(journey, prompt, raw, parsed, itemMs);
+      writeLlmFile(journey, prompt, rawText, parsed, itemMs);
 
       if (parsed) {
         log('info', `📦 Batch [${i + 1}/${batch.length}] done`, {
@@ -539,6 +563,8 @@ app.post('/score/batch', async (req, res) => {
           ms: `${itemMs}ms`,
           score: parsed.retirementScore,
           verdict: parsed.retirementLabel,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
         });
       } else {
         log('warn', `📦 Batch [${i + 1}/${batch.length}] parse failed`, { id, ms: `${itemMs}ms` });
@@ -546,8 +572,9 @@ app.post('/score/batch', async (req, res) => {
 
       results.push({
         journeyId: id,
-        ...(parsed || { error: 'parse-failed', raw: raw.slice(0, 200) }),
+        ...(parsed || { error: 'parse-failed', raw: rawText.slice(0, 200) }),
         model: MODEL,
+        _tokens: { prompt: promptTokens, completion: completionTokens, total: promptTokens + completionTokens },
       });
     } catch (e) {
       const itemMs = Date.now() - itemStart;
@@ -570,6 +597,34 @@ app.post('/score/batch', async (req, res) => {
   });
 
   res.json({ results });
+});
+
+// ── /stats  (session token usage) ────────────────────────────────────────────
+app.get('/stats', (_req, res) => {
+  const uptime = Math.round((Date.now() - new Date(tokenStats.startedAt).getTime()) / 1000);
+  const stats = {
+    ...tokenStats,
+    totalTokens: tokenStats.totalPromptTokens + tokenStats.totalCompletionTokens,
+    uptimeSeconds: uptime,
+    model: MODEL,
+  };
+  log('info', '📊 Stats requested', {
+    requests: stats.totalRequests,
+    prompt_tokens: stats.totalPromptTokens,
+    completion_tokens: stats.totalCompletionTokens,
+    total_tokens: stats.totalTokens,
+  });
+  res.json(stats);
+});
+
+// ── /stats/reset  (clear session counters) ───────────────────────────────────
+app.post('/stats/reset', (_req, res) => {
+  tokenStats.totalRequests = 0;
+  tokenStats.totalPromptTokens = 0;
+  tokenStats.totalCompletionTokens = 0;
+  tokenStats.startedAt = new Date().toISOString();
+  log('info', '📊 Stats reset');
+  res.json({ ok: true, message: 'Token stats reset' });
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
@@ -600,6 +655,8 @@ app.listen(PORT, () => {
   console.log(`  \x1b[36mGET  \x1b[0mhttp://localhost:${PORT}/health`);
   console.log(`  \x1b[36mPOST \x1b[0mhttp://localhost:${PORT}/score          { journey: {...} }`);
   console.log(`  \x1b[36mPOST \x1b[0mhttp://localhost:${PORT}/score/batch    { journeys: [...] }`);
+  console.log(`  \x1b[36mGET  \x1b[0mhttp://localhost:${PORT}/stats           token usage counters`);
+  console.log(`  \x1b[36mPOST \x1b[0mhttp://localhost:${PORT}/stats/reset     reset counters`);
   console.log('');
   console.log('\x1b[2mOptional env vars:\x1b[0m');
   console.log(`  PORT=${PORT}   OLLAMA_BASE=${OLLAMA_BASE}   MODEL=${MODEL}`);

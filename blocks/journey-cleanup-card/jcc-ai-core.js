@@ -91,6 +91,14 @@ export async function checkProxyHealth(proxyUrl) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
+export async function fetchTokenStats(proxyUrl) {
+  try {
+    const res = await fetch(`${proxyUrl}/stats`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return res.json();
+  } catch (_) { return null; }
+}
+
 export function createAgentPool({ cfg, proxyUrl, concurrency = AI_AGENT_CONCURRENCY, detailCache, onScore, onProgress, onComplete }) {
   const queue = [];
   let done = 0; let total = 0; let stopped = false;
