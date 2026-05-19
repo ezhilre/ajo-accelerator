@@ -218,11 +218,22 @@ Return ONLY valid JSON — no markdown, no explanatory text outside the object.
  *
  * @param {object} journey           - enriched journey (with _daysStale, _isDefaultName)
  * @param {Array}  resolvedAudiences - output from Agent 1 (may be empty)
+ * @param {number} retryCount        - number of previous attempts (0 = first attempt)
+ *                                     When > 0, a strict JSON-only suffix is appended to the
+ *                                     prompt to nudge the LLM away from conversational output.
  * @returns {Promise<{ parsed, rawText, promptTokens, completionTokens, prompt }>}
  */
-async function scoreJourney(journey, resolvedAudiences) {
-  const id     = journey.id || 'unknown';
-  const prompt = buildPrompt(journey, resolvedAudiences);
+async function scoreJourney(journey, resolvedAudiences, retryCount = 0) {
+  const id          = journey.id || 'unknown';
+  const basePrompt  = buildPrompt(journey, resolvedAudiences);
+
+  // On retry: append a strict reminder that forces JSON-only output.
+  // Local Ollama models sometimes respond conversationally on the first attempt.
+  const retrySuffix = retryCount > 0
+    ? `\n\n--- IMPORTANT (retry attempt ${retryCount}) ---\nYour previous response was not valid JSON.\nYou MUST respond with ONLY a raw JSON object.\nDo NOT include any explanation, preamble, markdown formatting, or code fences.\nStart your response directly with { and end with }.\nNo other text is permitted outside the JSON object.`
+    : '';
+
+  const prompt = basePrompt + retrySuffix;
 
   log('info', '🎯 Agent 2 — scoring journey', {
     id, name: (journey.name || '').slice(0, 40), status: journey.status,

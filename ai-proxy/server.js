@@ -31,8 +31,8 @@ const {
   checkOllamaAvailability, getOllamaStatus, MODEL, LLM_CONCURRENCY,
   OLLAMA_BASE,
 } = require('./lib/queue');
-const { resolveJourneyAudiences, buildAudienceDefinitionsBlock } = require('./agents/audience-agent'); // eslint-disable-line no-unused-vars
-const { scoreJourney }                               = require('./agents/scoring-agent');
+const { resolveJourneyAudiences }  = require('./agents/audience-agent');
+const { journeyGraph }             = require('./graph/journey-graph');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -87,68 +87,6 @@ function effectiveCfg(reqCfg) {
   };
 }
 
-/** Enrich a journey with computed fields before passing to agents. */
-function enrichJourney(journey) {
-  const modifiedAt = journey.metadata?.lastModifiedAt;
-  const daysStale  = modifiedAt
-    ? Math.floor((Date.now() - new Date(modifiedAt).getTime()) / 86400000) : 0;
-  const DEFAULT_NAME_RE = /^Journey\s*[\-_]?\s*\d+\s*(v\d+)?$/i;
-  return {
-    ...journey,
-    _daysStale:     daysStale,
-    _isDefaultName: !!(journey.name && DEFAULT_NAME_RE.test(journey.name.trim())),
-  };
-}
-
-/**
- * Extract all unique audiences from a journey object.
- * Checks multiple locations where the AJO API places audience references:
- *   1. journey.audiences[]            — top-level array (some API shapes)
- *   2. canvas.nodes[].audiences[]     — node-level audiences array (audience_qualification nodes)
- *   3. nodes[].audiences[]            — flat nodes array variant
- *   4. journey.audienceId             — single top-level ID (legacy)
- *   5. events[].audienceId / segmentId — event-node IDs
- */
-function extractAllAudiences(journey) {
-  const map = new Map();
-
-  const addAudience = (a) => {
-    if (a && a.id) map.set(a.id, { id: a.id, name: a.name || '' });
-  };
-
-  // 1. Top-level audiences array
-  (Array.isArray(journey.audiences) ? journey.audiences : []).forEach(addAudience);
-
-  // 2 & 3. Canvas / flat nodes — scan all nodes for .audiences[] arrays
-  const rawNodes = [
-    ...(Array.isArray(journey.canvas?.nodes) ? journey.canvas.nodes : []),
-    ...(Array.isArray(journey.nodes) ? journey.nodes : []),
-    ...(journey.canvas?.nodes && typeof journey.canvas.nodes === 'object' && !Array.isArray(journey.canvas.nodes)
-      ? Object.values(journey.canvas.nodes) : []),
-    ...(Array.isArray(journey.actions) ? journey.actions : []),
-    ...(Array.isArray(journey.events) ? journey.events : []),
-    ...(Array.isArray(journey.conditions) ? journey.conditions : []),
-  ];
-
-  rawNodes.forEach((node) => {
-    // node.audiences[] — present on audience_qualification nodes
-    if (Array.isArray(node.audiences)) {
-      node.audiences.forEach(addAudience);
-    }
-    // node.audienceId / node.segmentId — some node shapes use a single ID
-    if (node.audienceId) addAudience({ id: node.audienceId, name: node.audienceName || '' });
-    if (node.segmentId)  addAudience({ id: node.segmentId,  name: node.segmentName  || '' });
-  });
-
-  // 4. Top-level single audienceId
-  if (journey.audienceId) addAudience({ id: journey.audienceId, name: '' });
-  if (journey.segmentId)  addAudience({ id: journey.segmentId,  name: '' });
-
-  // 5. segment object
-  if (journey.segment?.id) addAudience({ id: journey.segment.id, name: journey.segment.name || '' });
-
-  return [...map.values()];
-}
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -241,7 +179,7 @@ app.post('/score', async (req, res) => {
     return res.status(400).json({ error: 'Missing journey object with id' });
   }
 
-  const journey = enrichJourney(rawJourney);
+  const journey = rawJourney;
   const eCfg    = effectiveCfg(req.body?.cfg);
   const { id }  = journey;
   const scoreStart = Date.now();
@@ -252,47 +190,59 @@ app.post('/score', async (req, res) => {
 
   await acquireSlot(id);
   try {
-    // Agent 1 — Audience Resolver
-    const rawAudiences = extractAllAudiences(journey);
-    let audienceResults = [];
-    const sep = '━'.repeat(80);
-    log('info', `\n${sep}`);
-    log('info', `  AGENT 1 — AUDIENCE RESOLVER`);
-    log('info', sep);
-    if (rawAudiences.length && eCfg.token) {
-      log('info', '🎭 Agent 1 — resolving audiences', { journey_id: id, count: rawAudiences.length, ids: rawAudiences.map((a) => a.id).join(', ') });
-      audienceResults = await resolveJourneyAudiences(rawAudiences, eCfg);
-    } else if (!rawAudiences.length) {
-      log('info', '🎭 Agent 1 — No audiences found in this journey (or audience resolution skipped).');
-    } else {
-      log('info', '🎭 Agent 1 — Audience resolution skipped (no Adobe token provided).');
-    }
+    // ── LangGraph: invoke the compiled journey-scoring graph ─────────────────
+    // The graph runs: enrich_journey → [resolve/skip]_audiences → score_journey
+    //                 → parse_result (with up to 2 automatic retries on JSON parse failure)
+    log('info', '🕸️  Invoking LangGraph journey-scoring pipeline', { id });
 
-    // Agent 2 — Journey Scorer
-    const { parsed, rawText, promptTokens, completionTokens, prompt } =
-      await scoreJourney({ ...journey, audiences: audienceResults }, audienceResults);
+    const finalState = await journeyGraph.invoke({ journey: rawJourney, cfg: eCfg });
+
+    const {
+      parsed,
+      rawText,
+      prompt,
+      promptTokens,
+      completionTokens,
+      resolvedAudiences: audienceResults,
+      enrichedJourney,
+      retryCount,
+    } = finalState;
 
     const totalMs = Date.now() - scoreStart;
-    writeLlmFile(journey, prompt, rawText, parsed, totalMs, audienceResults);
+
+    // Use the enriched journey for logging/file writing (has _daysStale etc.)
+    const journeyForLog = enrichedJourney || rawJourney;
+    writeLlmFile(journeyForLog, prompt, rawText, parsed, totalMs, audienceResults || []);
 
     if (!parsed) {
+      log('error', '🎯 Score failed — no valid JSON after retries', {
+        id, ms: `${totalMs}ms`, retries: retryCount,
+      });
       return res.status(422).json({
-        error: 'LLM returned non-JSON response', raw: rawText.slice(0, 500), fallback: true,
+        error:    'LLM returned non-JSON response after retries',
+        raw:      (rawText || '').slice(0, 500),
+        retries:  retryCount,
+        fallback: true,
       });
     }
 
     log('info', '🎯 Score complete', {
-      id, ms: `${totalMs}ms`, verdict: parsed.retirementLabel, score: parsed.retirementScore,
-      audiences_resolved: audienceResults.length,
+      id,
+      ms:                 `${totalMs}ms`,
+      verdict:            parsed.retirementLabel,
+      score:              parsed.retirementScore,
+      retries:            retryCount,
+      audiences_resolved: (audienceResults || []).length,
     });
 
     res.json({
       journeyId: id,
       ...parsed,
-      model: MODEL,
-      _raw:     rawText.slice(0, 200),
-      _tokens:  { prompt: promptTokens, completion: completionTokens, total: promptTokens + completionTokens },
-      _audiences: audienceResults.map((a) => ({
+      model:      MODEL,
+      _raw:       (rawText || '').slice(0, 200),
+      _tokens:    { prompt: promptTokens, completion: completionTokens, total: (promptTokens || 0) + (completionTokens || 0) },
+      _retries:   retryCount,
+      _audiences: (audienceResults || []).map((a) => ({
         id: a.id, name: a.name, plainEnglish: a.plainEnglish, status: a.apiStatus,
       })),
     });
@@ -330,42 +280,45 @@ app.post('/score/batch', async (req, res) => {
 
   const results = [];
   for (let i = 0; i < batch.length; i += 1) {
-    const journey  = enrichJourney(batch[i]);
-    const { id }   = journey;
+    const { id }    = batch[i];
     const itemStart = Date.now();
 
-    log('info', `📦 Batch [${i + 1}/${batch.length}]`, { id, name: (journey.name || '').slice(0, 35) });
+    log('info', `📦 Batch [${i + 1}/${batch.length}]`, { id, name: (batch[i].name || '').slice(0, 35) });
 
     await acquireSlot(id); // eslint-disable-line no-await-in-loop
     try {
-      // Agent 1
-      const rawAudiences = extractAllAudiences(journey);
-      let audienceResults = [];
-      if (rawAudiences.length && eCfg.token) {
-        // eslint-disable-next-line no-await-in-loop
-        audienceResults = await resolveJourneyAudiences(rawAudiences, eCfg);
-      }
-
-      // Agent 2
+      // ── LangGraph: invoke the compiled journey-scoring graph (per batch item) ──
       // eslint-disable-next-line no-await-in-loop
-      const { parsed, rawText, promptTokens, completionTokens, prompt } =
-        await scoreJourney({ ...journey, audiences: audienceResults }, audienceResults);
+      const finalState = await journeyGraph.invoke({ journey: batch[i], cfg: eCfg });
+
+      const {
+        parsed,
+        rawText,
+        prompt,
+        promptTokens,
+        completionTokens,
+        resolvedAudiences: audienceResults,
+        enrichedJourney,
+        retryCount,
+      } = finalState;
 
       const itemMs = Date.now() - itemStart;
-      writeLlmFile(journey, prompt, rawText, parsed, itemMs, audienceResults);
+      const journeyForLog = enrichedJourney || batch[i];
+      writeLlmFile(journeyForLog, prompt, rawText, parsed, itemMs, audienceResults || []);
 
       results.push({
         journeyId: id,
-        ...(parsed || { error: 'parse-failed', raw: rawText.slice(0, 200) }),
+        ...(parsed || { error: 'parse-failed', raw: (rawText || '').slice(0, 200) }),
         model:      MODEL,
-        _tokens:    { prompt: promptTokens, completion: completionTokens, total: promptTokens + completionTokens },
-        _audiences: audienceResults.map((a) => ({
+        _tokens:    { prompt: promptTokens, completion: completionTokens, total: (promptTokens || 0) + (completionTokens || 0) },
+        _retries:   retryCount,
+        _audiences: (audienceResults || []).map((a) => ({
           id: a.id, name: a.name, plainEnglish: a.plainEnglish, status: a.apiStatus,
         })),
       });
 
       log('info', `📦 Batch [${i + 1}/${batch.length}] done`, {
-        id, ms: `${itemMs}ms`, score: parsed?.retirementScore,
+        id, ms: `${itemMs}ms`, score: parsed?.retirementScore, retries: retryCount,
       });
     } catch (e) {
       const itemMs = Date.now() - itemStart;
