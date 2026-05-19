@@ -641,7 +641,7 @@ async function showDashboard(root, cfg) {
 function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   let all = initialJourneys ? [...initialJourneys] : [];
   let filtered = []; let pg = 0;
-  let nameQ = ''; let statusQ = 'all'; let createdByQ = 'all'; let bucketQ = 'all';
+  let nameQ = ''; let statusQ = 'all'; let createdByQ = 'all'; let bucketQ = 'all'; let aiCategoryQ = 'all';
   let sortK = 'lastModifiedAt'; let sortD = 'asc'; let loading = true; let expanded = null;
 
   const aiSaved = getAiSettings();
@@ -724,9 +724,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '  </div>',
     // AI counts row
     '  <div class="jcc-ai-counts" id="jcc-ai-counts" style="display:none">',
-    '    <span class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire">&#x1F534; 0 Retire</span>',
-    '    <span class="jcc-ai-cnt jcc-ai-cnt-review" id="jcc-ai-review">&#x1F7E1; 0 Review</span>',
-    '    <span class="jcc-ai-cnt jcc-ai-cnt-keep"   id="jcc-ai-keep">&#x1F7E2; 0 Keep</span>',
+    '    <span class="jcc-ai-counts-lbl">Filter:</span>',
+    '    <button class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire" data-cat="retire" title="Show only Retire journeys">&#x1F534; 0 Retire</button>',
+    '    <button class="jcc-ai-cnt jcc-ai-cnt-review" id="jcc-ai-review" data-cat="review" title="Show only Review journeys">&#x1F7E1; 0 Review</button>',
+    '    <button class="jcc-ai-cnt jcc-ai-cnt-keep"   id="jcc-ai-keep"   data-cat="keep"   title="Show only Keep journeys">&#x1F7E2; 0 Keep</button>',
+    '    <button class="jcc-ai-cnt jcc-ai-cnt-all" id="jcc-ai-all" data-cat="all" title="Show all journeys">&#x26AA; All</button>',
     '  </div>',
     '</div>',
     // Summary
@@ -780,6 +782,14 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '    <div class="jcc-fg"><label for="jcc-cb">Owner</label>',
     '      <select id="jcc-cb" class="jcc-sel"><option value="all">All Owners</option></select>',
     '    </div>',
+    '    <div class="jcc-fg" id="jcc-ai-cat-fg" style="display:none"><label for="jcc-ai-cat">AI Category</label>',
+    '      <select id="jcc-ai-cat" class="jcc-sel">',
+    '        <option value="all">All</option>',
+    '        <option value="retire">\uD83D\uDD34 Retire</option>',
+    '        <option value="review">\uD83D\uDFE1 Review</option>',
+    '        <option value="keep">\uD83D\uDFE2 Keep</option>',
+    '      </select>',
+    '    </div>',
     '    <div class="jcc-fg"><label for="jcc-sk">Sort</label>',
     '      <select id="jcc-sk" class="jcc-sel">',
     '        <option value="lastModifiedAt">Last Modified</option>',
@@ -797,7 +807,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     // Table
     '<div class="jcc-tbl-wrap">',
     '  <table class="jcc-tbl"><thead><tr id="jcc-thead-row">',
-    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Score</th><th>Go</th>',
+    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Verdict</th><th>Go</th>',
     '  </tr></thead><tbody id="jcc-tb"></tbody></table>',
     '  <div id="jcc-empty" class="jcc-empty" style="display:none"><p>&#x1F50D; No stale journeys match.</p></div>',
     '</div>',
@@ -829,6 +839,8 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   const aiHealthBtn = dash.querySelector('#jcc-ai-health-chk');
   const aiStopBtn = dash.querySelector('#jcc-ai-stop');
   const aiCountsEl = dash.querySelector('#jcc-ai-counts');
+  const aiCatFg = dash.querySelector('#jcc-ai-cat-fg');
+  const aiCatEl = dash.querySelector('#jcc-ai-cat');
   const aiPf = dash.querySelector('#jcc-ai-pf');
   const aiPl = dash.querySelector('#jcc-ai-pl');
 
@@ -867,6 +879,30 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     cbEl.innerHTML = '<option value="all">All Owners</option>' + names.map((n) => `<option value="${esc(n)}"${n === prev ? ' selected' : ''}>${esc(n)}</option>`).join('');
   }
 
+  // ── AI category helper ─────────────────────────────────────────────────────
+
+  function getAiCategory(id) {
+    const e = aiScores.get(id);
+    if (!e) return null;
+    const { rule, llm } = e;
+    const score = llm && !llm.error
+      ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
+      : rule.score;
+    if (score >= 80) return 'retire';
+    if (score >= 50) return 'review';
+    return 'keep';
+  }
+
+  function setAiCategoryFilter(val) {
+    aiCategoryQ = val;
+    if (aiCatEl) aiCatEl.value = val;
+    // Update active state on count buttons
+    aiCountsEl.querySelectorAll('[data-cat]').forEach((btn) => {
+      btn.classList.toggle('jcc-ai-cnt-active', btn.dataset.cat === val);
+    });
+    applyF();
+  }
+
   // ── apply filters + sort ───────────────────────────────────────────────────
 
   function aiScore(id) {
@@ -889,6 +925,10 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       }
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (bucketQ !== 'all' && getBucket(daysAgo(j.metadata?.lastModifiedAt)) !== bucketQ) return false;
+      if (aiCategoryQ !== 'all') {
+        const cat = getAiCategory(j.id);
+        if (cat !== aiCategoryQ) return false;
+      }
       if (q) {
         const hay = [j.name, j.id, j.status, j.sandboxName, j.version, j.metadata?.createdBy, j.metadata?.lastModifiedBy].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -969,13 +1009,8 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   // ── render table ───────────────────────────────────────────────────────────
 
-  // Whether any journey has an LLM score (controls AI Score column visibility)
-  function hasLlmScores() {
-    for (const entry of aiScores.values()) {
-      if (entry.llm && !entry.llm.error) return true;
-    }
-    return false;
-  }
+  // Whether any journey has a score (rule or LLM) — controls AI Verdict column visibility
+  function hasAnyScores() { return aiScores.size > 0; }
 
   function render() {
     const tot = filtered.length;
@@ -983,10 +1018,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     if (pg >= pages) pg = pages - 1;
     const items = filtered.slice(pg * ROWS_PER_PAGE, (pg + 1) * ROWS_PER_PAGE);
 
-    // Show/hide AI Score column based on whether LLM has produced results
-    const showAiCol = hasLlmScores();
+    // Show AI Verdict column and AI Category filter as soon as any scores exist
+    const showAiCol = hasAnyScores();
     const aiTh = dash.querySelector('#jcc-th-ai');
     if (aiTh) aiTh.style.display = showAiCol ? '' : 'none';
+    if (aiCatFg) aiCatFg.style.display = showAiCol ? 'flex' : 'none';
     const colSpan = showAiCol ? 8 : 7;
 
     rcEl.textContent = loading
@@ -1008,7 +1044,24 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         const journeyUrl = `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(j.id)}`;
         const aiEntry = aiScores.get(j.id);
         const pending = aiRunning && aiEntry && !aiEntry.llm;
-        const badge = scoreBadgeHtml(aiEntry?.rule || null, aiEntry?.llm || null, pending);
+        // Verdict pill in table row (score details live in the expanded panel)
+        let verdictCell = '';
+        if (showAiCol) {
+          if (pending) {
+            verdictCell = '<span class="jcc-ai-analyzing" style="font-size:0.72rem">\u23F3</span>';
+          } else if (aiEntry) {
+            const cat = getAiCategory(j.id);
+            const catMap = {
+              retire: { cls: 'jcc-verdict-pill-retire', icon: '\uD83D\uDD34', lbl: 'Retire' },
+              review: { cls: 'jcc-verdict-pill-review', icon: '\uD83D\uDFE1', lbl: 'Review' },
+              keep:   { cls: 'jcc-verdict-pill-keep',   icon: '\uD83D\uDFE2', lbl: 'Keep'   },
+            };
+            const cv = cat ? catMap[cat] : catMap.keep;
+            verdictCell = `<span class="jcc-verdict-pill ${cv.cls}">${cv.icon} ${cv.lbl}</span>`;
+          } else {
+            verdictCell = '<span class="jcc-verdict-pill-empty">\u2014</span>';
+          }
+        }
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
@@ -1016,7 +1069,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           `<td class="jcc-cp" title="${esc(j.metadata?.createdBy || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
           `<td class="jcc-cd">${fmtDate(j.metadata?.createdAt)}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
-          showAiCol ? `<td class="jcc-cai">${badge}</td>` : '',
+          showAiCol ? `<td class="jcc-cai">${verdictCell}</td>` : '',
           `<td class="jcc-cgo"><a class="jcc-go-btn" href="${esc(journeyUrl)}" target="_blank" rel="noopener noreferrer">&#x1F517; Go</a></td>`,
         ].join('');
         tb.appendChild(tr);
@@ -1255,6 +1308,12 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   });
 
   aiHealthBtn.addEventListener('click', () => { proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001'; testProxy(); });
+
+  // ── AI category filter & count button events ───────────────────────────────
+  if (aiCatEl) aiCatEl.addEventListener('change', () => setAiCategoryFilter(aiCatEl.value));
+  aiCountsEl.querySelectorAll('[data-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => setAiCategoryFilter(btn.dataset.cat));
+  });
 
   aiStopBtn.addEventListener('click', () => {
     if (agentPool) { agentPool.stop(); agentPool = null; }
