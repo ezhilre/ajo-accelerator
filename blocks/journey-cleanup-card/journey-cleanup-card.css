@@ -1817,6 +1817,272 @@ a.jcc-go-btn:active,
   align-self: center;
 }
 
+/* ── Mode selection screen ───────────────────────────────────────────────── */
+
+.jcc-mode-select {
+  font-family: 'Adobe Clean', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem 1.5rem;
+  max-width: 720px;
+  margin: 0 auto;
+  gap: 1.5rem;
+  animation: jcc-fade-in 0.2s ease;
+}
+
+.jcc-ms-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.jcc-ms-icon {
+  font-size: 3rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-ms-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+  color: #2c2c2c;
+  letter-spacing: -0.01em;
+}
+
+.jcc-ms-sub {
+  font-size: 0.875rem;
+  color: #6e6e6e;
+  margin: 0;
+}
+
+.jcc-ms-prompt {
+  font-size: 1rem;
+  color: #4b4b4b;
+  margin: 0;
+  font-weight: 500;
+}
+
+.jcc-ms-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.jcc-ms-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  background: #fff;
+  border: 2px solid #e1e1e1;
+  border-radius: 12px;
+  padding: 2rem 1.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.jcc-ms-card:hover {
+  border-color: #1473e6;
+  box-shadow: 0 4px 20px rgba(20, 115, 230, 0.15);
+  transform: translateY(-3px);
+}
+
+.jcc-ms-card:first-child:hover { border-color: #1473e6; }
+.jcc-ms-card:last-child:hover  { border-color: #7e5fcf; box-shadow: 0 4px 20px rgba(126, 95, 207, 0.15); }
+
+.jcc-ms-card-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.jcc-ms-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #2c2c2c;
+}
+
+.jcc-ms-card-desc {
+  font-size: 0.82rem;
+  color: #6e6e6e;
+  line-height: 1.5;
+}
+
+.jcc-ms-note {
+  font-size: 0.75rem;
+  color: #8d8d8d;
+  margin: 0;
+}
+
+/* ── Journey ID Lookup screen ────────────────────────────────────────────── */
+
+.jcc-id-lookup {
+  font-family: 'Adobe Clean', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #2c2c2c;
+  padding: 1.25rem 1.5rem 2rem;
+  max-width: 860px;
+  margin: 0 auto;
+  animation: jcc-fade-in 0.2s ease;
+}
+
+.jcc-idl-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e1e1e1;
+}
+
+.jcc-idl-back {
+  flex-shrink: 0;
+}
+
+.jcc-idl-header-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-idl-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+  color: #2c2c2c;
+  letter-spacing: -0.01em;
+}
+
+.jcc-idl-sub {
+  font-size: 0.82rem;
+  color: #6e6e6e;
+  margin: 0;
+}
+
+.jcc-idl-form-wrap {
+  background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.jcc-idl-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.jcc-idl-input {
+  flex: 1;
+  border: 1px solid #b3b3ff;
+  border-radius: 6px;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.875rem;
+  font-family: 'Courier New', monospace;
+  background: #fff;
+  color: #2c2c2c;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 0;
+}
+
+.jcc-idl-input:focus {
+  outline: none;
+  border-color: #7e5fcf;
+  box-shadow: 0 0 0 2px rgba(126, 95, 207, 0.2);
+}
+
+.jcc-idl-input::placeholder {
+  color: #b3b3b3;
+  font-family: 'Courier New', monospace;
+}
+
+.jcc-idl-analyze-btn {
+  flex-shrink: 0;
+}
+
+.jcc-idl-ai-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #c9d8ff;
+}
+
+.jcc-idl-err {
+  background: #fdf3f4;
+  border: 1px solid #f4b8bb;
+  border-radius: 4px;
+  color: #c9252d;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.875rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jcc-idl-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  font-size: 0.9rem;
+  color: #7e5fcf;
+  font-style: italic;
+  animation: jcc-pulse 1.2s ease-in-out infinite;
+}
+
+/* Result card */
+.jcc-idl-result {
+  animation: jcc-slide-up 0.22s ease;
+}
+
+.jcc-idl-result-card {
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(20, 115, 230, 0.08);
+}
+
+.jcc-idl-result-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, #f0f4ff 0%, #ebf0ff 100%);
+  border-bottom: 1px solid #c9d8ff;
+  padding: 0.85rem 1.25rem;
+}
+
+.jcc-idl-result-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.jcc-idl-result-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 480px;
+}
+
+/* ── responsive ──────────────────────────────────────────────────────────── */
 /* responsive */
 @media (max-width: 640px) {
   .jcc-modal-box { padding: 1.25rem; }
@@ -1838,4 +2104,10 @@ a.jcc-go-btn:active,
   .jcc-phase-row { flex-wrap: wrap; }
   .jcc-prog-lbl { min-width: 0; }
   .jcc-ai-settings-row { flex-direction: column; align-items: flex-start; }
+  .jcc-ms-cards { grid-template-columns: 1fr; }
+  .jcc-ms-card { padding: 1.5rem 1rem; }
+  .jcc-idl-form-row { flex-direction: column; align-items: stretch; }
+  .jcc-idl-input { width: 100%; }
+  .jcc-idl-ai-row { flex-direction: column; align-items: flex-start; }
+  .jcc-idl-result-hdr { flex-direction: column; align-items: flex-start; }
 }

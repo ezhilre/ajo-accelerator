@@ -4,6 +4,7 @@ import {
   computeRuleScore, isDefaultJourneyName,
   scoreBadgeHtml, aiDetailHtml, journeyTypeBadgeHtml,
   checkProxyHealth, createAgentPool, fetchTokenStats,
+  fetchJourneyDetail, scoreSingleLLM,
 } from './jcc-ai-core.js';
 import {
   saveSnapshot, loadSnapshot, clearSnapshot,
@@ -177,6 +178,247 @@ async function verifyCredentials(c) {
   return data.pagination?.totalCount ?? (data.results || []).length;
 }
 
+// ─── mode selection ───────────────────────────────────────────────────────────
+
+function showModeSelect(root, cfg) {
+  root.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'jcc-mode-select';
+  wrap.innerHTML = `
+    <div class="jcc-ms-header">
+      <span class="jcc-ms-icon">&#x1F9F9;</span>
+      <div>
+        <h2 class="jcc-ms-title">Journey Cleanup Dashboard</h2>
+        <p class="jcc-ms-sub">Connected to sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
+      </div>
+    </div>
+    <p class="jcc-ms-prompt">How would you like to analyze your journeys?</p>
+    <div class="jcc-ms-cards">
+      <button class="jcc-ms-card" id="jcc-ms-all">
+        <span class="jcc-ms-card-icon">&#x1F4CA;</span>
+        <span class="jcc-ms-card-title">Analyze All</span>
+        <span class="jcc-ms-card-desc">Fetch &amp; score all stale journeys not modified in 30+ days. Supports AI risk scoring, filtering, CSV export and more.</span>
+      </button>
+      <button class="jcc-ms-card" id="jcc-ms-single">
+        <span class="jcc-ms-card-icon">&#x1F50D;</span>
+        <span class="jcc-ms-card-title">Analyze by Journey ID</span>
+        <span class="jcc-ms-card-desc">Look up a specific journey by its UUID. Instantly get rule-based and AI risk analysis for that single journey.</span>
+      </button>
+    </div>
+    <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
+  `;
+  root.appendChild(wrap);
+  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showDashboard(root, cfg));
+  wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
+}
+
+// ─── journey id lookup ────────────────────────────────────────────────────────
+
+function showJourneyIdLookup(root, cfg) {
+  root.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'jcc-id-lookup';
+
+  const aiSaved = getAiSettings();
+  let aiEnabled = !!aiSaved.enabled;
+  let proxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
+
+  wrap.innerHTML = `
+    <div class="jcc-idl-header">
+      <button class="jcc-idl-back jcc-btn-sec" id="jcc-idl-back">&#x2190; Back</button>
+      <span class="jcc-idl-header-icon">&#x1F50D;</span>
+      <div>
+        <h2 class="jcc-idl-title">Analyze by Journey ID</h2>
+        <p class="jcc-idl-sub">Sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
+      </div>
+    </div>
+    <div class="jcc-idl-form-wrap">
+      <div class="jcc-idl-form-row">
+        <input id="jcc-idl-input" class="jcc-idl-input" type="text"
+          placeholder="Paste Journey UUID e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          autocomplete="off" spellcheck="false" />
+        <button class="jcc-btn-primary jcc-idl-analyze-btn" id="jcc-idl-submit">&#x1F50D; Analyze</button>
+      </div>
+      <div class="jcc-idl-ai-row">
+        <label class="jcc-ai-toggle-lbl">
+          <input type="checkbox" id="jcc-idl-ai-chk"${aiEnabled ? ' checked' : ''} />
+          <span>&#x1F916; Smart AI Analyze</span>
+        </label>
+        <div class="jcc-ai-cfg" id="jcc-idl-ai-cfg">
+          <label class="jcc-ai-cfg-lbl" for="jcc-idl-ai-url">Proxy:</label>
+          <input id="jcc-idl-ai-url" class="jcc-ai-url" type="text" value="${esc(proxyUrl)}" placeholder="http://localhost:3001" />
+          <button id="jcc-idl-health-chk" class="jcc-btn-health">&#x1F50D; Test</button>
+          <span id="jcc-idl-ai-status" class="jcc-ai-status jcc-ai-s-unknown">&#x25CF; Not checked</span>
+        </div>
+      </div>
+      <div id="jcc-idl-err" class="jcc-idl-err" style="display:none"></div>
+    </div>
+    <div id="jcc-idl-result" class="jcc-idl-result" style="display:none"></div>
+  `;
+  root.appendChild(wrap);
+
+  const inputEl = wrap.querySelector('#jcc-idl-input');
+  const submitBtn = wrap.querySelector('#jcc-idl-submit');
+  const errEl = wrap.querySelector('#jcc-idl-err');
+  const resultEl = wrap.querySelector('#jcc-idl-result');
+  const aiChk = wrap.querySelector('#jcc-idl-ai-chk');
+  const aiUrlEl = wrap.querySelector('#jcc-idl-ai-url');
+  const aiStatusEl = wrap.querySelector('#jcc-idl-ai-status');
+  const aiHealthBtn = wrap.querySelector('#jcc-idl-health-chk');
+
+  function updAiStatus(ok, msg) {
+    aiStatusEl.className = `jcc-ai-status ${ok ? 'jcc-ai-s-ok' : 'jcc-ai-s-err'}`;
+    aiStatusEl.textContent = `\u25CF ${msg}`;
+  }
+
+  async function testProxyHealth() {
+    aiStatusEl.className = 'jcc-ai-status jcc-ai-s-unknown';
+    aiStatusEl.textContent = '\u25CF Checking\u2026';
+    const health = await checkProxyHealth(proxyUrl);
+    if (health.ok) updAiStatus(true, `Connected \u2014 ${health.model || 'unknown model'}`);
+    else updAiStatus(false, `Offline: ${health.error || 'unreachable'}`);
+    return health;
+  }
+
+  aiChk.addEventListener('change', () => {
+    aiEnabled = aiChk.checked;
+    saveAiSettings({ enabled: aiEnabled, proxyUrl });
+    if (aiEnabled) testProxyHealth();
+  });
+
+  aiUrlEl.addEventListener('change', () => {
+    proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
+    saveAiSettings({ enabled: aiEnabled, proxyUrl });
+  });
+
+  aiHealthBtn.addEventListener('click', () => {
+    proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
+    testProxyHealth();
+  });
+
+  if (aiEnabled) testProxyHealth();
+
+  // Allow Enter key to submit
+  inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitBtn.click(); });
+
+  wrap.querySelector('#jcc-idl-back').addEventListener('click', () => showModeSelect(root, cfg));
+
+  submitBtn.addEventListener('click', async () => {
+    const rawId = inputEl.value.trim();
+    errEl.style.display = 'none';
+    resultEl.style.display = 'none';
+
+    if (!rawId) {
+      errEl.style.display = 'flex';
+      errEl.textContent = '\u26A0 Please enter a Journey ID.';
+      return;
+    }
+
+    // Basic UUID format check
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRe.test(rawId)) {
+      errEl.style.display = 'flex';
+      errEl.textContent = '\u26A0 That doesn\u2019t look like a valid Journey UUID. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
+      return;
+    }
+
+    // Show loading state
+    submitBtn.disabled = true;
+    submitBtn.textContent = '\u23F3 Fetching\u2026';
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = '<div class="jcc-idl-loading">\u23F3 Fetching journey from AJO API\u2026</div>';
+
+    let journey;
+    try {
+      journey = await fetchJourneyDetail(cfg, rawId);
+    } catch (e) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '\uD83D\uDD0D Analyze';
+      resultEl.style.display = 'none';
+      errEl.style.display = 'flex';
+      const hint = e.message.includes('404') ? `Journey not found in sandbox \u201C${cfg.sandbox}\u201D \u2014 verify the ID and sandbox.`
+        : e.message.includes('401') || e.message.includes('403') ? 'Authentication failed \u2014 your token may have expired.'
+          : `API error: ${e.message}`;
+      errEl.textContent = `\u274C ${hint}`;
+      return;
+    }
+
+    // Rule score (instant)
+    const rule = computeRuleScore(journey);
+    renderSingleResult(resultEl, cfg, journey, rule, null, false);
+    submitBtn.disabled = false;
+    submitBtn.textContent = '\uD83D\uDD0D Analyze';
+
+    // LLM score (if enabled)
+    if (aiEnabled) {
+      const health = await testProxyHealth();
+      if (!health.ok) {
+        // Update result card to show proxy-offline note
+        renderSingleResult(resultEl, cfg, journey, rule, { error: 'AI proxy is offline \u2014 rule-based score only.' }, false);
+        return;
+      }
+      renderSingleResult(resultEl, cfg, journey, rule, null, true); // show "analyzing…"
+      try {
+        const llm = await scoreSingleLLM(journey, proxyUrl);
+        renderSingleResult(resultEl, cfg, journey, rule, llm, false);
+      } catch (e) {
+        renderSingleResult(resultEl, cfg, journey, rule, { error: e.message }, false);
+      }
+    }
+  });
+}
+
+function renderSingleResult(container, cfg, j, rule, llm, analyzing) {
+  const sc = sClass(j.status);
+  const days = daysAgo(j.metadata?.lastModifiedAt);
+  const stCls = sc2(days);
+  const journeyUrl = `https://experience.adobe.com/#/@${encodeURIComponent(cfg.tenantId)}/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(j.id)}`;
+
+  const fields = [
+    ['Journey ID', `<span class="jcc-mono">${esc(j.id || '\u2014')}</span>`],
+    ['IMS Org ID', `<span class="jcc-mono">${esc(j.imsOrgId || '\u2014')}</span>`],
+    ['Name', esc(j.name || '\u2014')],
+    ['Status', `<span class="jcc-st jcc-st-${sc}">${esc(statusLabel(j.status))}</span>`],
+    ['Version', esc(j.version || '\u2014')],
+    ['Sandbox', esc(j.sandboxName || '\u2014')],
+    ['Created By', esc(j.metadata?.createdBy || '\u2014')],
+    ['Created At', fmtDate(j.metadata?.createdAt)],
+    ['Last Modified By', esc(j.metadata?.lastModifiedBy || '\u2014')],
+    ['Last Modified At', fmtDate(j.metadata?.lastModifiedAt)],
+    ['Days Stale', `<span class="jcc-stale-badge ${stCls}">${days} days</span>`],
+  ];
+
+  let gridHtml = '<div class="jcc-dgrid">';
+  fields.forEach(([lbl, val], i) => {
+    const full = i < 2 ? ' jcc-df' : ''; // Journey ID and Org ID span full width
+    gridHtml += `<div class="jcc-di${full}"><span class="jcc-dlbl">${lbl}</span><span class="jcc-dval">${val}</span></div>`;
+  });
+  gridHtml += '</div>';
+
+  let aiHtml = '';
+  if (analyzing) {
+    aiHtml = '<div class="jcc-ai-detail"><div class="jcc-ai-detail-hdr"><span>&#x1F916;</span> AI Risk Analysis</div><div class="jcc-ai-analyzing" style="padding:0.75rem 1rem">\u23F3 Running LLM analysis\u2026</div></div>';
+  } else {
+    aiHtml = aiDetailHtml(rule, llm);
+  }
+
+  container.innerHTML = `
+    <div class="jcc-idl-result-card">
+      <div class="jcc-idl-result-hdr">
+        <div class="jcc-idl-result-title">
+          <span class="jcc-st jcc-st-${sc}">${esc(statusLabel(j.status))}</span>
+          <span class="jcc-idl-result-name">${esc(j.name || '\u2014')}</span>
+        </div>
+        <a class="jcc-go-btn" href="${esc(journeyUrl)}" target="_blank" rel="noopener noreferrer">&#x1F517; Open in AJO</a>
+      </div>
+      <div class="jcc-dpanel">
+        ${gridHtml}
+        ${aiHtml}
+      </div>
+    </div>
+  `;
+}
+
 function showModal(onOk) {
   document.querySelector('.jcc-modal-overlay')?.remove();
   const overlay = document.createElement('div');
@@ -238,7 +480,7 @@ function showModal(onOk) {
       csEl.textContent = `\u2705 Connected \u2014 sandbox: ${c.sandbox} (${count.toLocaleString()} journeys found)`;
       connectBtn.textContent = '\u2714 Connected!';
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(c));
-      // Brief pause so user sees success, then open dashboard
+      // Brief pause so user sees success, then show mode selection
       setTimeout(() => { closeModal(); onOk(c); }, 900);
     } catch (err) {
       csEl.className = 'jcc-modal-connect-status jcc-cs-err';
@@ -1170,7 +1412,7 @@ function showPreDash(root) {
     + '<p style="color:#6e6e6e;margin:0.25rem 0 1rem;font-size:0.9rem">No credentials configured.</p>'
     + '<button class="jcc-btn-primary jcc-pre-open-cfg">&#x2699;&#xFE0F; Configure Credentials</button>';
   root.appendChild(wrap);
-  wrap.querySelector('.jcc-pre-open-cfg').addEventListener('click', () => { showModal((nc) => showDashboard(root, nc)); });
+  wrap.querySelector('.jcc-pre-open-cfg').addEventListener('click', () => { showModal((nc) => showModeSelect(root, nc)); });
 }
 
 // ─── EDS entry point ─────────────────────────────────────────────────────────
@@ -1181,8 +1423,8 @@ function initApp(root) {
   const saved = getSaved();
   const hasSaved = saved.token && saved.apiKey && saved.orgId && saved.sandbox;
   const cfg = hasCfg ? blockCfg : (hasSaved ? saved : null);
-  if (cfg) { showDashboard(root, cfg); }
-  else { showPreDash(root); showModal((nc) => showDashboard(root, nc)); }
+  if (cfg) { showModeSelect(root, cfg); }
+  else { showPreDash(root); showModal((nc) => showModeSelect(root, nc)); }
 }
 
 export default function decorate(block) {
