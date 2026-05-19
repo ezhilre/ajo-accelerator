@@ -89,7 +89,7 @@ function buildPrompt(journey, resolvedAudiences) {
 
   const audienceSummary    = buildAudienceSummary(events, conditions, audienceNames, audienceId, triggerInfo);
   const journeyStructure   = buildJourneyStructure(
-    actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth,
+    actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth, triggerInfo,
   );
   const operationalSignals = buildOperationalSignals(meta, sched, exitArr, status);
 

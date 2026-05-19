@@ -259,7 +259,7 @@ function buildAudienceSummary(events, conditions, audienceNames, audienceId, tri
 }
 
 // ── buildJourneyStructure() ───────────────────────────────────────────────────
-function buildJourneyStructure(actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth) {
+function buildJourneyStructure(actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth, triggerInfo) {
   const {
     inAppCount = 0, emailCount = 0, smsCount = 0, pushCount = 0,
     contentCardCount = 0, directMailCount = 0, webCount = 0, codeBasedCount = 0, customCount = 0,
@@ -291,13 +291,28 @@ function buildJourneyStructure(actions, events, conditions, channelCounts, audie
 
   const yn = (v) => (v ? 'YES' : 'no');
 
+  // Determine entry trigger type accurately:
+  // - audience-based: read_segment / audience_entry node → audience batch trigger
+  // - event-triggered: unitary_event node → real-time event trigger (NO audience qualification)
+  // - none: no entry event node found
+  const isAudienceTrigger = !!(triggerInfo && /audience-based|read.?segment/i.test(triggerInfo));
+  const isEventTrigger    = !!(triggerInfo && /event-triggered|unitary/i.test(triggerInfo));
+  const entryTriggerType  = isAudienceTrigger ? 'Audience-based (read segment / batch)'
+    : isEventTrigger ? 'Event-triggered (unitary / real-time)'
+    : events.length ? 'Entry event present (type unknown)'
+    : 'none detected';
+
+  // Audience qualification = true ONLY when entry is audience-based OR audienceId/audienceNames exist
+  const hasAudienceQual = isAudienceTrigger || !!(audienceId) || audienceNames.length > 0;
+
   return [
     `- Total nodes:               ${totalNodes} | Complexity: ${complexity}`,
     `- Branch count:              ${totalBranches} (${conditions.length} condition node${conditions.length !== 1 ? 's' : ''})`,
     `- Max path depth (BFS):      ${maxDepth} steps`,
     `- Message touchpoints:       ${messagingCount > 0 ? 'YES' + msgDetail : 'no'}`,
     `- Wait/timing steps:         ${waitSteps > 0 ? `YES (${waitSteps})` : 'no'}`,
-    `- Audience qualification:    ${yn(!!(events.length || audienceId || audienceNames.length))}`,
+    `- Entry trigger type:        ${entryTriggerType}`,
+    `- Audience qualification:    ${yn(hasAudienceQual)}`,
     `- Named audience segments:   ${audienceNames.length ? audienceNames.join(', ') : 'none'}`,
     `- Personalized segmentation: ${yn(audienceNames.length > 0 && conditions.length > 0)}`,
     `- Has description:           ${description && description.trim() ? 'YES' : 'no'}`,
