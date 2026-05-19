@@ -807,7 +807,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     // Table
     '<div class="jcc-tbl-wrap">',
     '  <table class="jcc-tbl"><thead><tr id="jcc-thead-row">',
-    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Verdict</th><th>Go</th>',
+    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Created</th><th>Last Modified</th><th id="jcc-th-ai" style="display:none">AI Verdict</th><th>Go</th>',
     '  </tr></thead><tbody id="jcc-tb"></tbody></table>',
     '  <div id="jcc-empty" class="jcc-empty" style="display:none"><p>&#x1F50D; No stale journeys match.</p></div>',
     '</div>',
@@ -1300,6 +1300,36 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   aiLiveChk.addEventListener('change', () => {
     includeLive = aiLiveChk.checked;
     // not persisted — resets to false on next page load
+
+    // If AI is already running or fetch is done, recompute targets and add live journeys
+    if (includeLive && all.length > 0) {
+      const co = cutoff();
+      if (includeLive) {
+        const liveTargets = all.filter((j) => {
+          if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
+          const s = (j.status || '').toLowerCase();
+          return (s === 'live' || s === 'deployed') && !(aiScores.get(j.id)?.llm);
+        });
+        if (liveTargets.length > 0) {
+          // Apply rule scores first
+          applyRuleScores(liveTargets);
+          if (aiEnabled) {
+            if (aiRunning && agentPool) {
+              // Already running — enqueue live journeys into existing pool
+              // Update total displayed in progress by adding to pendingAiTargets
+              pendingAiTargets = [...pendingAiTargets, ...liveTargets];
+              agentPool.enqueue(liveTargets);
+              aiPl.textContent = `\uD83E\uDD16 LLM: added ${liveTargets.length} live journeys \u2014 now ${pendingAiTargets.length} total\u2026`;
+            } else if (!aiRunning && !loading) {
+              // Fetch is done, AI completed — start a new AI run for live journeys
+              aiPl.textContent = `\uD83E\uDD16 Starting LLM on ${liveTargets.length} live journeys\u2026`;
+              startAI(liveTargets);
+            }
+          }
+          applyF();
+        }
+      }
+    }
   });
 
   aiUrlEl.addEventListener('change', () => {
@@ -1402,11 +1432,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         updSummary(); updOwnerFilter(); applyF();
 
         const co = cutoff();
-        // Default: LLM on draft + failed only. "Include live" adds live/deployed journeys.
+        // Default: LLM on draft journeys only. "Include live" adds live/deployed journeys.
         const staleTargets = final.filter((j) => {
           if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
           const s = (j.status || '').toLowerCase();
-          if (s === 'draft' || s === 'failed' || s === 'closed' || s === 'finished' || s === 'stopped') return true;
+          if (s === 'draft') return true;
           if (includeLive && (s === 'live' || s === 'deployed')) return true;
           return false;
         });
