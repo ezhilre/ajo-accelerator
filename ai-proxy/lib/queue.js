@@ -9,7 +9,7 @@ const { log } = require('./logger');
 const OLLAMA_BASE        = process.env.OLLAMA_BASE       || 'http://localhost:11434';
 const MODEL              = process.env.MODEL             || 'llama3';
 const LLM_CONCURRENCY    = parseInt(process.env.CONCURRENCY || '1', 10);
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 120_000;
 
 // ── Token usage counters ──────────────────────────────────────────────────────
 const tokenStats = {

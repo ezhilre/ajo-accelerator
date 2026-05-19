@@ -797,7 +797,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     // Table
     '<div class="jcc-tbl-wrap">',
     '  <table class="jcc-tbl"><thead><tr id="jcc-thead-row">',
-    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Use Case</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Score</th><th>Go</th>',
+    '    <th></th><th>Name</th><th>Status</th><th>Owner</th><th>Created</th><th>Stale</th><th id="jcc-th-ai" style="display:none">AI Score</th><th>Go</th>',
     '  </tr></thead><tbody id="jcc-tb"></tbody></table>',
     '  <div id="jcc-empty" class="jcc-empty" style="display:none"><p>&#x1F50D; No stale journeys match.</p></div>',
     '</div>',
@@ -955,7 +955,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       }
     }
 
-    dtr.innerHTML = `<td colspan="9"><div class="jcc-dpanel">${grid}${aiHtml}</div></td>`;
+    dtr.innerHTML = `<td colspan="8"><div class="jcc-dpanel">${grid}${aiHtml}</div></td>`;
     dtr.querySelectorAll('.jcc-copy').forEach((btn) => {
       btn.addEventListener('click', () => {
         navigator.clipboard?.writeText(btn.dataset.v).then(() => {
@@ -987,7 +987,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     const showAiCol = hasLlmScores();
     const aiTh = dash.querySelector('#jcc-th-ai');
     if (aiTh) aiTh.style.display = showAiCol ? '' : 'none';
-    const colSpan = showAiCol ? 9 : 8;
+    const colSpan = showAiCol ? 8 : 7;
 
     rcEl.textContent = loading
       ? `Loaded ${all.length} (fetching\u2026) \u2014 ${tot} shown`
@@ -1009,17 +1009,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         const aiEntry = aiScores.get(j.id);
         const pending = aiRunning && aiEntry && !aiEntry.llm;
         const badge = scoreBadgeHtml(aiEntry?.rule || null, aiEntry?.llm || null, pending);
-        const llmData = aiEntry?.llm && !aiEntry.llm.error ? aiEntry.llm : null;
-        const ucTip = llmData ? esc(llmData.useCaseSummary || 'Unable to determine use case') : 'Unable to determine use case';
-        const useCaseCell = llmData
-          ? `<div class="jcc-cuc-wrap">${journeyTypeBadgeHtml(llmData)}<i class="jcc-info-icon" data-tip="${ucTip}" aria-label="Use case info">i</i></div>`
-          : (pending ? '<span class="jcc-cuc-pending">\u23F3</span>' : `<span class="jcc-cuc-empty">\u2753 Unclassified <i class="jcc-info-icon" data-tip="Unable to determine use case" aria-label="Use case info">i</i></span>`);
         tr.innerHTML = [
           `<td><button class="jcc-tog" aria-expanded="${isExp}">${isExp ? '\u25B2' : '\u25BC'}</button></td>`,
           `<td class="jcc-cn" title="${esc(j.name || '')}"><span>${esc(j.name || '\u2014')}</span></td>`,
           `<td><span class="jcc-st jcc-st-${sc}">${esc(statusLabel(j.status))}</span></td>`,
           `<td class="jcc-cp" title="${esc(j.metadata?.createdBy || '')}">${esc(j.metadata?.createdBy || '\u2014')}</td>`,
-          `<td class="jcc-cuc">${useCaseCell}</td>`,
           `<td class="jcc-cd">${fmtDate(j.metadata?.createdAt)}</td>`,
           `<td class="jcc-cs ${stCls}">${days}d</td>`,
           showAiCol ? `<td class="jcc-cai">${badge}</td>` : '',

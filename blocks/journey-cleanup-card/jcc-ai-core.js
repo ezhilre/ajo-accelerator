@@ -84,7 +84,7 @@ export async function resolveAudiences(audiences, cfg, proxyUrl, timeoutMs = 30_
   }
 }
 
-export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 90_000) {
+export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 150_000) {
   const enriched = {
     ...journey,
     _daysStale: daysAgoAI(journey.metadata?.lastModifiedAt),
@@ -171,13 +171,16 @@ export function createAgentPool({
       );
       consecutiveFails = 0; // reset on success
     } catch (e) {
-      consecutiveFails += 1;
       const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
-      llm = { error: isTimeout ? 'Request timed out — proxy may be overloaded' : e.message };
-      // Detect proxy down after N consecutive failures
-      if (consecutiveFails >= PROXY_DOWN_THRESHOLD && !proxyDownFired && onProxyDown) {
-        proxyDownFired = true;
-        onProxyDown(e.message);
+      llm = { error: isTimeout ? 'LLM timed out — Ollama is slow, proxy is still running. Retry later.' : e.message };
+      // Only count connection errors (proxy truly down) toward the down threshold.
+      // Timeouts mean Ollama is slow but the proxy itself is alive — don't trigger false "proxy down" banner.
+      if (!isTimeout) {
+        consecutiveFails += 1;
+        if (consecutiveFails >= PROXY_DOWN_THRESHOLD && !proxyDownFired && onProxyDown) {
+          proxyDownFired = true;
+          onProxyDown(e.message);
+        }
       }
     }
     // Attach resolved audience info to LLM result for UI rendering
