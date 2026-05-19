@@ -707,7 +707,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     `      <input type="checkbox" id="jcc-ai-chk"${aiEnabled ? ' checked' : ''} />`,
     '      <span>&#x1F916; Smart AI Analyze</span>',
     '    </label>',
-    '    <span class="jcc-ai-tip">When ON: LLM scores <strong>draft+failed</strong> journeys after loading. OFF = instant rule scoring only.</span>',
+    '    <span class="jcc-ai-tip">When ON: LLM scores <strong>draft</strong> journeys after loading. OFF = instant rule scoring only.</span>',
     '    <label class="jcc-ai-toggle-lbl jcc-ai-live-lbl" title="Also run LLM on live (deployed) journeys — slower but catches risky live campaigns">',
     `      <input type="checkbox" id="jcc-ai-live-chk"${includeLive ? ' checked' : ''} />`,
     '      <span>📡 Include live journeys</span>',
