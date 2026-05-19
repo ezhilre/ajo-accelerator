@@ -1441,6 +1441,33 @@ a.jcc-go-btn:active,
 
 .jcc-ai-rec-retire { background: #fce5e7; color: #c9252d; border: 1px solid #f4b8bb; }
 .jcc-ai-rec-review { background: #fce7c0; color: #a85900; border: 1px solid #f4d48a; }
+
+/* ── Governance split row (lifecycle decision + review priority) ── */
+.jcc-ai-governance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.jcc-ai-gov-decision,
+.jcc-ai-gov-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+/* Lifecycle decision — inherits rec colours via shared classes */
+
+/* Governance review priority */
+.jcc-ai-gov-low    { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.jcc-ai-gov-medium { background: #fff8e1; color: #a85900; border-color: #ffe082; }
+.jcc-ai-gov-high   { background: #fce5e7; color: #c9252d; border-color: #f4b8bb; }
 .jcc-ai-rec-keep   { background: #cef5e7; color: #0d7055; border: 1px solid #a0dfc6; }
 
 .jcc-ai-err-note {

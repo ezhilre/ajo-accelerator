@@ -94,8 +94,10 @@ function writeLlmFile(journey, prompt, raw, parsed, durationMs) {
         ['useCaseSummary',    parsed.useCaseSummary],
         ['targetAudience',    parsed.targetAudience],
         ['businessPurpose',   parsed.businessPurpose],
-        ['reasoning',         parsed.reasoning],
-        ['recommendation',    parsed.recommendation],
+        ['lifecycleDecision',        parsed.lifecycleDecision],
+        ['governanceReviewPriority', parsed.governanceReviewPriority],
+        ['reasoning',                parsed.reasoning],
+        ['recommendation',           parsed.recommendation],
       ];
       fields.forEach(([k, v]) => {
         if (v !== undefined && v !== null) lines.push(`  ${k.padEnd(20)}: ${v}`);
@@ -1051,10 +1053,35 @@ GOVERNANCE RULES (apply in priority order):
 1. INTENT IS PRIMARY. Interpret purpose from flow structure, audience names, condition names, and channel choices.
 2. Draft ≠ abandoned. A draft with entry logic + branching + message actions has deliberate business purpose.
 3. Staleness influences retirement urgency only — not whether the journey had a legitimate purpose.
-4. Name tokens (test/copy/old/v2) are WEAK signals and cannot override structural evidence of real intent.
+4. Name tokens (test/copy/delete/old/v2) are WEAK signals. Strong structural evidence overrides naming completely.
+   A word like "delete" in a title is a note-to-self, not proof the journey is empty or accidental.
 5. If journey has >=1 entry event AND >=1 condition AND >=1 message action → describe the real business intent.
    "No identifiable business purpose" is only valid when: AJO default name AND 0 message actions AND 0 conditions AND no description.
 6. Test/POC requires: placeholder name AND trivial structure (<=1 node, no audience logic, no messaging).
+
+WORKFLOW RICHNESS CALIBRATION (retirementScore anchors — apply before finalising score):
+- Rich lifecycle workflow = any combination of: audience qualification + condition branching + 2+ message actions + timing/wait steps
+  → retirementScore MUST be ≤ 35, regardless of draft status or staleness up to 120 days
+- Monetization signals (free/paid split, subscription branching, upsell targeting, credit/premium audience):
+  → Strong KEEP indicator — floor retirementScore at ≤ 25
+- Onboarding + activation + app-timing patterns with multiple IAM/push actions:
+  → Strong KEEP indicator — floor retirementScore at ≤ 30
+- Draft status contributes at most a small bump (+5 to reasoning, not a major retirement factor)
+- Staleness (60–120 days) for a complex journey: contributes at most +8 to score — do not compound with other signals
+- "Review with owner" is ONLY appropriate when: purpose is genuinely ambiguous OR broken references exist
+  OR the journey has been inactive for 1+ years with no structural evidence of active use
+- A journey with segmentation + branching + monetization/lifecycle targeting + multiple touchpoints
+  should default to: retirementScore ≤ 30, lifecycleDecision: "Keep", recommendation: "Keep"
+
+SCORING EXAMPLES (calibration anchors — use these to self-check your retirementScore before responding):
+- Onboarding + free/paid audience split + 4 IAM actions + wait timer + monetization branch + draft + 65d stale
+  → retirementScore: 20, lifecycleDecision: "Keep", governanceReviewPriority: "low", recommendation: "Keep"
+- Named journey + rich conditions + email sequence + audience segments + stopped 8 months ago
+  → retirementScore: 45, lifecycleDecision: "Review", governanceReviewPriority: "medium", recommendation: "Review with owner"
+- AJO default name + 0 conditions + 0 message actions + 400d stale + no description
+  → retirementScore: 92, lifecycleDecision: "Archive", governanceReviewPriority: "high", recommendation: "Archive"
+- Named journey + 1 email + no conditions + draft + 90d stale + no audience
+  → retirementScore: 55, lifecycleDecision: "Review", governanceReviewPriority: "medium", recommendation: "Review with owner"
 
 JOURNEY IDENTITY:
 Name: "${name}"
@@ -1106,6 +1133,8 @@ Answer each field from a business strategy lens, not a graph description lens:
   "retirementLabel": "Safe to Retire|Review First|Keep Active",
   "confidence": 0-100,
   "reasoning": "2-3 sentences citing specific signals: lifecycle stage, audience segmentation, channel strategy, timing pattern, status, and staleness.",
+  "lifecycleDecision": "Keep|Archive|Review",
+  "governanceReviewPriority": "low|medium|high",
   "recommendation": "Archive|Review with owner|Keep|Contact owner before deleting"
 }`;
 }

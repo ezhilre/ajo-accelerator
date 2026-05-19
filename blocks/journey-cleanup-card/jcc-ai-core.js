@@ -32,8 +32,8 @@ export function computeRuleScore(journey) {
 
   const badWords = /\b(test|copy|old|tmp|temp|backup|delete|unused|demo|sample|draft|v1|v2|v3|poc|prototype|placeholder|dummy)\b/i;
   if (!isDefaultJourneyName(name) && badWords.test(name)) {
-    score += 20;
-    signals.push({ label: 'Name contains stale indicator (test/copy/old\u2026)', points: 20, type: 'warning' });
+    score += 10;
+    signals.push({ label: 'Name contains stale indicator (weak contextual signal)', points: 10, type: 'warning' });
   }
 
   if (days > 180) { score += 35; signals.push({ label: `${days} days stale (>180d)`, points: 35, type: 'critical' }); }
@@ -42,7 +42,7 @@ export function computeRuleScore(journey) {
   else if (days > 60) { score += 8; signals.push({ label: `${days} days stale (>60d)`, points: 8, type: 'ok' }); }
 
   if (status === 'failed') { score += 15; signals.push({ label: 'Status: failed', points: 15, type: 'warning' }); }
-  else if (status === 'draft') { score += 12; signals.push({ label: 'Status: draft', points: 12, type: 'warning' }); }
+  else if (status === 'draft') { score += 7; signals.push({ label: 'Status: draft (not deployed yet)', points: 7, type: 'warning' }); }
   else if (status === 'stopped' || status === 'closed') { score += 8; signals.push({ label: `Status: ${status}`, points: 8, type: 'ok' }); }
 
   if (version <= 1) { score += 8; signals.push({ label: 'Version 1 (never iterated)', points: 8, type: 'ok' }); }
@@ -111,9 +111,17 @@ export function createAgentPool({
   let consecutiveFails = 0; let proxyDownFired = false;
 
   function tally(rule, llm) {
-    const s = llm && !llm.error
-      ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
-      : rule.score;
+    let s;
+    if (llm && !llm.error) {
+      // High-value journeys: LLM evidence dominates (80%) over rule heuristics (20%)
+      // to prevent staleness/naming penalties from overriding strong business intent signals.
+      const isHighValue = llm.businessValue === 'high' && (llm.retirementScore || 100) <= 40;
+      const ruleWeight = isHighValue ? 0.2 : 0.4;
+      const llmWeight  = isHighValue ? 0.8 : 0.6;
+      s = Math.round(rule.score * ruleWeight + (llm.retirementScore || 0) * llmWeight);
+    } else {
+      s = rule.score;
+    }
     if (s >= 80) retireCount += 1; else if (s >= 50) reviewCount += 1; else keepCount += 1;
   }
 
@@ -214,13 +222,22 @@ export function journeyTypeBadgeHtml(llm) {
   return `<span class="jcc-jtype-badge jcc-jtype-${meta.mod}" title="${tip}">${meta.icon} ${escAI(t)}</span>`;
 }
 
+// Shared combined-score calculator — mirrors tally() weight logic so badge + detail are consistent.
+function combinedScore(rule, llm) {
+  if (!llm || llm.error) return rule.score;
+  const isHighValue = llm.businessValue === 'high' && (llm.retirementScore || 100) <= 40;
+  const ruleWeight  = isHighValue ? 0.2 : 0.4;
+  const llmWeight   = isHighValue ? 0.8 : 0.6;
+  return Math.round(rule.score * ruleWeight + (llm.retirementScore || 0) * llmWeight);
+}
+
 export function scoreBadgeHtml(rule, llm, pending) {
   if (pending) return '<span class="jcc-ai-analyzing">\u23F3 Analyzing\u2026</span>';
   if (!rule) return '<span class="jcc-ai-pending">\u2014</span>';
   let s; let label; let tip;
   if (llm && !llm.error) {
-    s = Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6);
-    label = llm.retirementLabel || rule.label;
+    s = combinedScore(rule, llm);
+    label = llm.lifecycleDecision ? llm.lifecycleDecision : (llm.retirementLabel || rule.label);
     tip = `AI+Rule: ${s}/100 (confidence: ${llm.confidence || '?'}%)`;
   } else { s = rule.score; label = rule.label; tip = `Rule-based: ${s}/100`; }
   const color = s >= 80 ? 'red' : s >= 50 ? 'yellow' : 'green';
@@ -241,7 +258,7 @@ export function aiDetailHtml(rule, llm) {
     html += `<div class="jcc-ai-rule-total">Rule Score: <strong>${rule.score}/100</strong></div></div>`;
   }
   if (llm && !llm.error) {
-    const fs = Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6);
+    const fs = combinedScore(rule, llm);
     html += '<div class="jcc-ai-llm-panel">';
 
     // ── Business Intent Block (new) ───────────────────────────────────────
@@ -307,6 +324,23 @@ export function aiDetailHtml(rule, llm) {
     html += `<span class="jcc-ai-llm-lbl">Confidence</span><span>${llm.confidence || '?'}%</span></div>`;
     if (llm.businessPurpose) html += `<div class="jcc-ai-purpose"><strong>Business Purpose:</strong> ${escAI(llm.businessPurpose)}</div>`;
     if (llm.reasoning) html += `<div class="jcc-ai-reasoning">${escAI(llm.reasoning)}</div>`;
+
+    // ── Governance split: lifecycle decision + review priority ─────────────
+    if (llm.lifecycleDecision || llm.governanceReviewPriority) {
+      html += '<div class="jcc-ai-governance-row">';
+      if (llm.lifecycleDecision) {
+        const ldCls = llm.lifecycleDecision.toLowerCase() === 'keep' ? 'jcc-ai-rec-keep'
+          : llm.lifecycleDecision.toLowerCase() === 'archive' ? 'jcc-ai-rec-retire' : 'jcc-ai-rec-review';
+        html += `<span class="jcc-ai-gov-decision ${ldCls}">📋 Lifecycle: <strong>${escAI(llm.lifecycleDecision)}</strong></span>`;
+      }
+      if (llm.governanceReviewPriority) {
+        const gpCls = llm.governanceReviewPriority.toLowerCase() === 'low' ? 'jcc-ai-gov-low'
+          : llm.governanceReviewPriority.toLowerCase() === 'high' ? 'jcc-ai-gov-high' : 'jcc-ai-gov-medium';
+        html += `<span class="jcc-ai-gov-priority ${gpCls}">🔍 Review priority: <strong>${escAI(llm.governanceReviewPriority)}</strong></span>`;
+      }
+      html += '</div>';
+    }
+
     const rc = llm.retirementLabel && llm.retirementLabel.toLowerCase().includes('retire') ? 'jcc-ai-rec-retire'
       : llm.retirementLabel && llm.retirementLabel.toLowerCase().includes('keep') ? 'jcc-ai-rec-keep' : 'jcc-ai-rec-review';
     html += `<div class="jcc-ai-recommendation ${rc}"><strong>Recommendation:</strong> ${escAI(llm.recommendation || llm.retirementLabel || '\u2014')}</div>`;
