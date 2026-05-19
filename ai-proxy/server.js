@@ -46,7 +46,6 @@ function sanitizeName(name) {
 function writeLlmFile(journey, prompt, raw, parsed, durationMs) {
   if (!LLM_LOG_DIR) return;
   try {
-    // Ensure directory exists
     if (!fs.existsSync(LLM_LOG_DIR)) fs.mkdirSync(LLM_LOG_DIR, { recursive: true });
 
     const id = journey.id || 'unknown';
@@ -82,30 +81,25 @@ function writeLlmFile(journey, prompt, raw, parsed, durationMs) {
 
     if (parsed) {
       const fields = [
-        ['retirementScore', parsed.retirementScore],
-        ['retirementLabel', parsed.retirementLabel],
-        ['confidence',      parsed.confidence],
-        ['businessValue',   parsed.businessValue],
-        ['hasBusinessPurpose', parsed.hasBusinessPurpose],
-        ['journeyType',    parsed.journeyType],
-        ['useCaseSummary', parsed.useCaseSummary],
-        ['targetAudience', parsed.targetAudience],
-        ['businessPurpose', parsed.businessPurpose],
-        ['reasoning',      parsed.reasoning],
-        ['recommendation', parsed.recommendation],
+        ['retirementScore',  parsed.retirementScore],
+        ['retirementLabel',  parsed.retirementLabel],
+        ['confidence',       parsed.confidence],
+        ['businessValue',    parsed.businessValue],
+        ['journeyType',      parsed.journeyType],
+        ['useCaseSummary',   parsed.useCaseSummary],
+        ['targetAudience',   parsed.targetAudience],
+        ['businessPurpose',  parsed.businessPurpose],
+        ['reasoning',        parsed.reasoning],
+        ['recommendation',   parsed.recommendation],
       ];
       fields.forEach(([k, v]) => {
-        if (v !== undefined && v !== null) {
-          lines.push(`  ${k.padEnd(20)}: ${v}`);
-        }
+        if (v !== undefined && v !== null) lines.push(`  ${k.padEnd(20)}: ${v}`);
       });
     } else {
       lines.push('  (parse failed — see RAW RESPONSE above)');
     }
 
-    lines.push(SEP);
-    lines.push('');
-
+    lines.push(SEP, '');
     fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
     log('debug', '📄 LLM log written', { id, file: fileName });
   } catch (e) {
@@ -127,24 +121,18 @@ if (LOG_FILE) {
   }
 }
 
-const LEVEL_ICONS = { debug: '🔍', info: '✅', warn: '⚠ ', error: '❌' };
-const LEVEL_COLORS = {
-  debug: '\x1b[36m',  // cyan
-  info:  '\x1b[32m',  // green
-  warn:  '\x1b[33m',  // yellow
-  error: '\x1b[31m',  // red
-};
+const LEVEL_ICONS  = { debug: '🔍', info: '✅', warn: '⚠ ', error: '❌' };
+const LEVEL_COLORS = { debug: '\x1b[36m', info: '\x1b[32m', warn: '\x1b[33m', error: '\x1b[31m' };
 const RESET = '\x1b[0m';
-const DIM = '\x1b[2m';
-const BOLD = '\x1b[1m';
+const DIM   = '\x1b[2m';
+const BOLD  = '\x1b[1m';
 
 function log(level, message, meta = {}) {
   if ((LOG_LEVELS[level] ?? 0) < LOG_LEVEL) return;
-  const ts = new Date().toISOString();
-  const icon = LEVEL_ICONS[level] || '•';
+  const ts    = new Date().toISOString();
+  const icon  = LEVEL_ICONS[level]  || '•';
   const color = LEVEL_COLORS[level] || '';
 
-  // Build metadata string for console (compact key=value)
   const metaStr = Object.entries(meta)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${DIM}${k}=${RESET}${color}${v}${RESET}`)
@@ -159,10 +147,7 @@ function log(level, message, meta = {}) {
     console.log(line);
   }
 
-  // JSON-lines to file
-  if (logFileStream) {
-    logFileStream.write(JSON.stringify({ ts, level, message, ...meta }) + '\n');
-  }
+  if (logFileStream) logFileStream.write(JSON.stringify({ ts, level, message, ...meta }) + '\n');
 }
 
 // ── Request logger middleware ─────────────────────────────────────────────────
@@ -170,9 +155,8 @@ function log(level, message, meta = {}) {
 function requestLogger(req, res, next) {
   const start = Date.now();
   const { method, path: reqPath } = req;
-
-  // Skip noisy health-check logging unless debug level
   const isHealth = reqPath === '/health';
+
   if (!isHealth || LOG_LEVEL <= LOG_LEVELS.debug) {
     log('info', `→ ${method} ${reqPath}`, {
       ip: req.ip || req.socket?.remoteAddress,
@@ -181,8 +165,8 @@ function requestLogger(req, res, next) {
   }
 
   res.on('finish', () => {
-    const ms = Date.now() - start;
-    const sc = res.statusCode;
+    const ms  = Date.now() - start;
+    const sc  = res.statusCode;
     const lvl = sc >= 500 ? 'error' : sc >= 400 ? 'warn' : 'info';
     if (!isHealth || LOG_LEVEL <= LOG_LEVELS.debug) {
       log(lvl, `← ${method} ${reqPath}`, { status: sc, ms: `${ms}ms` });
@@ -219,7 +203,7 @@ app.use(requestLogger);
 // ── Ollama availability tracking ──────────────────────────────────────────────
 let ollamaOnline = false;
 let ollamaLastChecked = null;
-const OLLAMA_CHECK_INTERVAL_MS = 15_000; // check every 15 s
+const OLLAMA_CHECK_INTERVAL_MS = 15_000;
 
 async function checkOllamaAvailability() {
   try {
@@ -230,24 +214,19 @@ async function checkOllamaAvailability() {
     const wasOffline = !ollamaOnline;
     ollamaOnline = r.ok;
     ollamaLastChecked = new Date().toISOString();
-    if (wasOffline && ollamaOnline) {
-      log('info', '🦙 Ollama came online', { url: OLLAMA_BASE });
-    }
+    if (wasOffline && ollamaOnline) log('info', '🦙 Ollama came online', { url: OLLAMA_BASE });
   } catch (_) {
     const wasOnline = ollamaOnline;
     ollamaOnline = false;
     ollamaLastChecked = new Date().toISOString();
-    if (wasOnline) {
-      log('warn', '🦙 Ollama went offline — proxy requests will be rejected', { url: OLLAMA_BASE });
-    }
+    if (wasOnline) log('warn', '🦙 Ollama went offline — proxy requests will be rejected', { url: OLLAMA_BASE });
   }
 }
 
-// Run immediately then on interval
 checkOllamaAvailability();
 setInterval(checkOllamaAvailability, OLLAMA_CHECK_INTERVAL_MS);
 
-// ── Token usage counters (session-level, reset on server restart) ─────────────
+// ── Token usage counters ──────────────────────────────────────────────────────
 const tokenStats = {
   totalRequests: 0,
   totalPromptTokens: 0,
@@ -269,10 +248,7 @@ function acquireSlot(journeyId) {
       } else {
         if (waitQueue.length === 0) {
           log('warn', 'Queue full — request waiting', {
-            journeyId,
-            active: activeCount,
-            waiting: waitQueue.length + 1,
-            concurrency: LLM_CONCURRENCY,
+            journeyId, active: activeCount, waiting: waitQueue.length + 1, concurrency: LLM_CONCURRENCY,
           });
         }
         waitQueue.push(tryAcquire);
@@ -285,10 +261,7 @@ function acquireSlot(journeyId) {
 function releaseSlot(journeyId) {
   activeCount -= 1;
   log('debug', 'Queue slot released', { journeyId, active: activeCount, queued: waitQueue.length });
-  if (waitQueue.length) {
-    const next = waitQueue.shift();
-    next();
-  }
+  if (waitQueue.length) waitQueue.shift()();
 }
 
 // ── Ollama call ───────────────────────────────────────────────────────────────
@@ -297,12 +270,8 @@ async function callOllama(prompt, journeyId) {
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const ollamaStart = Date.now();
 
-  log('debug', '🦙 Ollama → sending prompt', {
-    journeyId,
-    model: MODEL,
-    prompt_chars: prompt.length,
-  });
-  log('info', '🦙 Ollama prompt text', { journeyId, prompt });
+  log('debug', '🦙 Ollama → sending prompt', { journeyId, model: MODEL, prompt_chars: prompt.length });
+  log('info',  '🦙 Ollama prompt text', { journeyId, prompt });
 
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
@@ -318,17 +287,14 @@ async function callOllama(prompt, journeyId) {
     const data = await res.json();
     const ms = Date.now() - ollamaStart;
     log('info', '🦙 Ollama ← response received', {
-      journeyId,
-      ms: `${ms}ms`,
-      response_chars: (data.response || '').length,
-      eval_count: data.eval_count,
+      journeyId, ms: `${ms}ms`, response_chars: (data.response || '').length, eval_count: data.eval_count,
     });
-    const responseText = data.response || '';
-    // Accumulate token usage
-    const promptTokens = data.prompt_eval_count || 0;
+
+    const responseText     = data.response || '';
+    const promptTokens     = data.prompt_eval_count || 0;
     const completionTokens = data.eval_count || 0;
-    tokenStats.totalRequests += 1;
-    tokenStats.totalPromptTokens += promptTokens;
+    tokenStats.totalRequests         += 1;
+    tokenStats.totalPromptTokens     += promptTokens;
     tokenStats.totalCompletionTokens += completionTokens;
     log('info', '🦙 Ollama tokens', {
       journeyId,
@@ -337,11 +303,7 @@ async function callOllama(prompt, journeyId) {
       total_tokens: promptTokens + completionTokens,
       session_total: tokenStats.totalPromptTokens + tokenStats.totalCompletionTokens,
     });
-    // Log full raw LLM response at debug level
-    log('debug', '🦙 Ollama raw response', {
-      journeyId,
-      raw_response: responseText,
-    });
+    log('debug', '🦙 Ollama raw response', { journeyId, raw_response: responseText });
     return { text: responseText, promptTokens, completionTokens };
   } catch (e) {
     const ms = Date.now() - ollamaStart;
@@ -362,25 +324,16 @@ function extractJson(raw, journeyId) {
 
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) {
-    try {
-      const parsed = JSON.parse(fence[1].trim());
-      log('debug', 'JSON extracted from markdown fence', { journeyId });
-      return parsed;
-    } catch (_) { /* fall through */ }
+    try { return JSON.parse(fence[1].trim()); } catch (_) { /* fall through */ }
   }
 
   const brace = raw.match(/\{[\s\S]*\}/);
   if (brace) {
-    try {
-      const parsed = JSON.parse(brace[0]);
-      log('debug', 'JSON extracted from brace match', { journeyId });
-      return parsed;
-    } catch (_) { /* fall through */ }
+    try { return JSON.parse(brace[0]); } catch (_) { /* fall through */ }
   }
 
   log('warn', 'JSON parse failed — LLM returned non-JSON', {
-    journeyId,
-    raw_preview: raw.slice(0, 120).replace(/\n/g, ' '),
+    journeyId, raw_preview: raw.slice(0, 120).replace(/\n/g, ' '),
   });
   return null;
 }
@@ -388,34 +341,78 @@ function extractJson(raw, journeyId) {
 // ── Journey type name-based inference ────────────────────────────────────────
 function inferJourneyTypeFromName(name) {
   const n = name || '';
-  if (/abandon.?cart|cart.?abandon/i.test(n)) return 'Abandoned Cart';
-  if (/\bonboard/i.test(n)) return 'Onboarding';
-  if (/\bwelcome\b/i.test(n)) return 'Welcome';
-  if (/re.?engag|win.?back|laps|reactivat/i.test(n)) return 'Re-engagement';
-  if (/\bretention\b|\bchurn\b/i.test(n)) return 'Retention';
-  if (/transact|receipt|confirm|order.?confirm/i.test(n)) return 'Transactional';
-  if (/\bpromo\b|campaign|offer|discount|sale\b/i.test(n)) return 'Promotional';
+  if (/abandon.?cart|cart.?abandon/i.test(n))              return 'Abandoned Cart';
+  if (/\bonboard/i.test(n))                                 return 'Onboarding';
+  if (/\bwelcome\b/i.test(n))                               return 'Welcome';
+  if (/re.?engag|win.?back|laps|reactivat/i.test(n))        return 'Re-engagement';
+  if (/\bretention\b|\bchurn\b/i.test(n))                   return 'Retention';
+  if (/transact|receipt|confirm|order.?confirm/i.test(n))   return 'Transactional';
+  if (/\bpromo\b|campaign|offer|discount|sale\b/i.test(n))  return 'Promotional';
   if (/\btest\b|\bpoc\b|\bdemo\b|\bsandbox\b|\bqa\b|\buat\b/i.test(n)) return 'Test/POC';
   return null;
 }
 
-// ── Canvas node extractor ─────────────────────────────────────────────────────
-// AJO Journey Detail API returns nodes in various structures depending on version:
-//   • journey.canvas.nodes[]  with node.type / node.nodeType
-//   • journey.nodes[]         (some API versions)
-//   • journey.actions[] / journey.events[] / journey.conditions[]  (pre-processed)
-// We normalise all of them into three flat arrays.
+// ── Rule-based pre-classifier ─────────────────────────────────────────────────
+// Combines channel types + audience + node patterns to infer journey type before LLM.
+// Returns { type, confidence } when confident (>=82%), or null when uncertain.
+// Priority order:
+//  1. Abandoned Cart  — name pattern + email/sms present
+//  2. Onboarding      — name pattern + message action present
+//  3. Welcome         — name pattern + message action present
+//  4. Re-engagement   — name pattern + message actions present
+//  5. Retention       — name pattern + message actions present
+//  6. Transactional   — event-triggered + email + no conditions
+//  7. Promotional     — name pattern + message actions present
+//  8. Test/POC        — test/poc name + minimal structure (<=2 nodes)
+//  9. Auth/login      — name + in-app/push actions
+function preClassifyJourney(name, nodes, channelCounts, triggerInfo) {
+  const n = name || '';
+  const { actions, events, conditions } = nodes;
+  const { emailCount = 0, smsCount = 0, pushCount = 0, inAppCount = 0 } = channelCounts;
+  const hasMessaging  = emailCount + smsCount + pushCount + inAppCount > 0;
+  const totalNodes    = actions.length + events.length + conditions.length;
+  const isEventBased  = !!(triggerInfo && /unitary|event-triggered/i.test(triggerInfo));
 
-const ACTION_TYPES = /action|message|email_message|email|sms|push|custom_action|custom|wait|timer|channel|inapp|iam|contentcard|content.?card|directmail|web.?action|code.?based/i;
-const EVENT_TYPES  = /^(unitary_event|read_segment|audience_entry|event|trigger|audience|entry|segment)/i;
-const COND_TYPES   = /^condition/i;
-const END_TYPES    = /^end$/i;
+  if (/abandon.?cart|cart.?abandon/i.test(n) && (emailCount > 0 || smsCount > 0)) {
+    return { type: 'Abandoned Cart', confidence: 92 };
+  }
+  if (/\bonboard/i.test(n) && hasMessaging) {
+    return { type: 'Onboarding', confidence: 90 };
+  }
+  if (/\bwelcome\b/i.test(n) && hasMessaging) {
+    return { type: 'Welcome', confidence: 90 };
+  }
+  if (/re.?engag|win.?back|laps|reactivat/i.test(n) && hasMessaging) {
+    return { type: 'Re-engagement', confidence: 88 };
+  }
+  if (/\bretention\b|\bchurn\b/i.test(n) && hasMessaging) {
+    return { type: 'Retention', confidence: 88 };
+  }
+  if (isEventBased && emailCount > 0 && conditions.length === 0) {
+    return { type: 'Transactional', confidence: 85 };
+  }
+  if (/\bpromo\b|campaign|offer|discount|sale\b/i.test(n) && hasMessaging) {
+    return { type: 'Promotional', confidence: 87 };
+  }
+  if (/\btest\b|\bpoc\b|\bdemo\b|\bsandbox\b|\bqa\b|\buat\b/i.test(n) && totalNodes <= 2) {
+    return { type: 'Test/POC', confidence: 90 };
+  }
+  if (/\bauth\b|\blogin\b|\bsign.?in\b|\botp\b|\bverif/i.test(n) && (inAppCount > 0 || pushCount > 0)) {
+    return { type: 'Onboarding', confidence: 82 };
+  }
+
+  return null; // uncertain — let LLM decide
+}
+
+// ── Canvas node extractor ─────────────────────────────────────────────────────
+const EVENT_TYPES = /^(unitary_event|read_segment|audience_entry|event|trigger|audience|entry|segment)/i;
+const COND_TYPES  = /^condition/i;
+const END_TYPES   = /^end$/i;
 
 function extractNodes(journey) {
-  // 1) Already pre-classified arrays (from older proxy versions / test mocks)
   if (
-    (journey.actions && journey.actions.length)
-    || (journey.events && journey.events.length)
+    (journey.actions    && journey.actions.length)
+    || (journey.events  && journey.events.length)
     || (journey.conditions && journey.conditions.length)
   ) {
     return {
@@ -426,61 +423,48 @@ function extractNodes(journey) {
     };
   }
 
-  // 2) Flat node list at journey.nodes  or  journey.canvas.nodes
   let rawNodes = [];
   if (Array.isArray(journey.canvas?.nodes) && journey.canvas.nodes.length) {
     rawNodes = journey.canvas.nodes;
   } else if (Array.isArray(journey.nodes) && journey.nodes.length) {
     rawNodes = journey.nodes;
   } else if (journey.canvas?.nodes && typeof journey.canvas.nodes === 'object') {
-    // Some API versions return nodes as a keyed object { nodeId: nodeObj, … }
     rawNodes = Object.values(journey.canvas.nodes);
   }
 
   if (rawNodes.length) {
-    const typeOf = (n) => (n.type || n.nodeType || n.actionType || n.eventType || '').toLowerCase();
-    // End nodes should not be counted in any category
-    const nonEnd     = rawNodes.filter((n) => !END_TYPES.test(typeOf(n)));
-    const events     = nonEnd.filter((n) => EVENT_TYPES.test(typeOf(n)));
-    const conditions = nonEnd.filter((n) => COND_TYPES.test(typeOf(n)));
-    const actions    = nonEnd.filter((n) => !EVENT_TYPES.test(typeOf(n)) && !COND_TYPES.test(typeOf(n)));
+    const typeOf     = (nd) => (nd.type || nd.nodeType || nd.actionType || nd.eventType || '').toLowerCase();
+    const nonEnd     = rawNodes.filter((nd) => !END_TYPES.test(typeOf(nd)));
+    const events     = nonEnd.filter((nd) => EVENT_TYPES.test(typeOf(nd)));
+    const conditions = nonEnd.filter((nd) => COND_TYPES.test(typeOf(nd)));
+    const actions    = nonEnd.filter((nd) => !EVENT_TYPES.test(typeOf(nd)) && !COND_TYPES.test(typeOf(nd)));
     log('debug', '🗂 Canvas nodes extracted', {
-      total: rawNodes.length,
-      non_end: nonEnd.length,
-      actions: actions.length,
-      events: events.length,
-      conditions: conditions.length,
+      total: rawNodes.length, non_end: nonEnd.length,
+      actions: actions.length, events: events.length, conditions: conditions.length,
     });
     return { actions, events, conditions, allNodes: rawNodes };
   }
 
-  // 3) Nothing found — return empty (list-level endpoint limitation)
   return { actions: [], events: [], conditions: [], allNodes: [] };
 }
 
 // ── Extract audience names from condition expressions ─────────────────────────
-// Finds inAudience("Audience Name") patterns in condition node expressions
-function extractAudienceNames(conditions) {
+function extractAudienceNames(nodes) {
   const names = new Set();
-  conditions.forEach((node) => {
-    // Check transitions for condition expressions
-    const transitions = node.transitions || [];
-    transitions.forEach((t) => {
+  nodes.forEach((node) => {
+    (node.transitions || []).forEach((t) => {
       if (t.expression) {
-        const matches = t.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi);
-        for (const m of matches) names.add(m[1]);
+        for (const m of t.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi)) names.add(m[1]);
       }
     });
-    // Also check expression directly on node
     if (node.expression) {
-      const matches = node.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi);
-      for (const m of matches) names.add(m[1]);
+      for (const m of node.expression.matchAll(/inAudience\(["']([^"']+)["']\)/gi)) names.add(m[1]);
     }
   });
   return [...names];
 }
 
-// ── Extract event trigger type from entry event nodes ─────────────────────────
+// ── Extract event trigger info ────────────────────────────────────────────────
 function extractTriggerInfo(events) {
   if (!events.length) return null;
   const trigger = events[0];
@@ -491,35 +475,26 @@ function extractTriggerInfo(events) {
   return `"${name}" (type: ${type})`;
 }
 
-// ── Extract channel summary from action nodes (by node type) ──────────────────
+// ── Extract channel counts from action nodes ──────────────────────────────────
 function extractChannelSummary(actions) {
-  const typeOf = (n) => (n.type || n.nodeType || n.actionType || '').toLowerCase();
-  const emailCount       = actions.filter((a) => /email_message|^email$/i.test(typeOf(a))).length;
-  const smsCount         = actions.filter((a) => /\bsms\b/i.test(typeOf(a))).length;
-  const pushCount        = actions.filter((a) => /\bpush\b/i.test(typeOf(a))).length;
-  const inAppCount       = actions.filter((a) => /inapp|in.app|\biam\b/i.test(typeOf(a))).length;
-  const contentCardCount = actions.filter((a) => /content.?card/i.test(typeOf(a))).length;
-  const directMailCount  = actions.filter((a) => /direct.?mail/i.test(typeOf(a))).length;
-  const webCount         = actions.filter((a) => /web.?action|\bweb\b/i.test(typeOf(a))).length;
-  const codeBasedCount   = actions.filter((a) => /code.?based/i.test(typeOf(a))).length;
-  const timerCount       = actions.filter((a) => /\btimer\b|\bwait\b/i.test(typeOf(a))).length;
-  const customCount      = actions.filter((a) => /custom_action|\bcustom\b/i.test(typeOf(a))).length;
+  const typeOf = (nd) => (nd.type || nd.nodeType || nd.actionType || '').toLowerCase();
   return {
-    emailCount, smsCount, pushCount, inAppCount, contentCardCount,
-    directMailCount, webCount, codeBasedCount, timerCount, customCount,
+    emailCount:       actions.filter((a) => /email_message|^email$/i.test(typeOf(a))).length,
+    smsCount:         actions.filter((a) => /\bsms\b/i.test(typeOf(a))).length,
+    pushCount:        actions.filter((a) => /\bpush\b/i.test(typeOf(a))).length,
+    inAppCount:       actions.filter((a) => /inapp|in.app|\biam\b/i.test(typeOf(a))).length,
+    contentCardCount: actions.filter((a) => /content.?card/i.test(typeOf(a))).length,
+    directMailCount:  actions.filter((a) => /direct.?mail/i.test(typeOf(a))).length,
+    webCount:         actions.filter((a) => /web.?action|\bweb\b/i.test(typeOf(a))).length,
+    codeBasedCount:   actions.filter((a) => /code.?based/i.test(typeOf(a))).length,
+    timerCount:       actions.filter((a) => /\btimer\b|\bwait\b/i.test(typeOf(a))).length,
+    customCount:      actions.filter((a) => /custom_action|\bcustom\b/i.test(typeOf(a))).length,
   };
 }
 
-// ── Journey flow path builder (graph traversal → indented readable string) ───
-// Walks canvas nodes via transition edges, producing:
-//   Audience Entry ("Segment Name")
-//   → In-App Message ("Action Name")
-//   → Condition: "Branch Name"
-//      [Yes] → Wait (24h) → End
-//      [No]  → In-App Message ("Other IAM") → End
-
+// ── Journey flow path builder + BFS max-depth calculator ─────────────────────
+// Returns { flowText, maxDepth } where maxDepth is the true BFS longest path.
 function buildFlowPath(journey) {
-  // Collect raw node list
   let rawNodes = [];
   if (Array.isArray(journey.canvas?.nodes) && journey.canvas.nodes.length) {
     rawNodes = journey.canvas.nodes;
@@ -528,484 +503,385 @@ function buildFlowPath(journey) {
   } else if (journey.canvas?.nodes && typeof journey.canvas.nodes === 'object') {
     rawNodes = Object.values(journey.canvas.nodes);
   }
+  if (!rawNodes.length) return { flowText: null, maxDepth: 0 };
 
-  if (!rawNodes.length) return null;
-
-  // Build lookup map  id → node
   const nodeMap = new Map();
-  rawNodes.forEach((n) => { if (n.id) nodeMap.set(n.id, n); });
+  rawNodes.forEach((nd) => { if (nd.id) nodeMap.set(nd.id, nd); });
 
-  // Find start node: prefer canvas.startNodeId, then first event-type node
   const startId = journey.canvas?.startNodeId
-    || rawNodes.find((n) => EVENT_TYPES.test((n.type || n.nodeType || '').toLowerCase()))?.id
+    || rawNodes.find((nd) => EVENT_TYPES.test((nd.type || nd.nodeType || '').toLowerCase()))?.id
     || rawNodes[0]?.id;
+  if (!startId) return { flowText: null, maxDepth: 0 };
 
-  if (!startId) return null;
-
-  const visited = new Set();
-
-  function nodeLabel(n) {
-    const type = (n.type || n.nodeType || n.actionType || '').toLowerCase();
-    const name = n.name || n.label || '';
-    if (EVENT_TYPES.test(type)) {
-      const base = type === 'read_segment' || type === 'audience_entry' ? 'Audience Entry' : 'Event Trigger';
-      return name ? `${base} ("${name}")` : base;
+  // BFS to compute longest path depth
+  let maxDepth = 0;
+  const bfsVisited = new Set();
+  const bfsQueue = [{ id: startId, depth: 0 }];
+  while (bfsQueue.length) {
+    const { id: curId, depth } = bfsQueue.shift();
+    if (bfsVisited.has(curId)) continue;
+    bfsVisited.add(curId);
+    maxDepth = Math.max(maxDepth, depth);
+    const nd = nodeMap.get(curId);
+    if (!nd) continue;
+    const transitions = Array.isArray(nd.transitions) ? nd.transitions : [];
+    transitions.forEach((t) => {
+      const nextId = t.nextNodeId || t.targetNodeId;
+      if (nextId && !bfsVisited.has(nextId)) bfsQueue.push({ id: nextId, depth: depth + 1 });
+    });
+    if (!transitions.length) {
+      const directNext = nd.nextNodeId || nd.targetNodeId;
+      if (directNext && !bfsVisited.has(directNext)) bfsQueue.push({ id: directNext, depth: depth + 1 });
     }
-    if (COND_TYPES.test(type)) {
-      return name ? `Condition: "${name}"` : 'Condition';
-    }
-    if (/\btimer\b|\bwait\b/i.test(type)) {
-      const dur = n.waitDuration || n.duration || '';
-      const unit = (n.waitUnit || n.unit || '').replace(/s$/, '');
-      return dur ? `Wait (${dur}${unit ? ' ' + unit : ''})` : 'Wait';
-    }
-    if (/inapp|in.app|\biam\b/i.test(type)) return name ? `In-App Message ("${name}")` : 'In-App Message';
-    if (/email_message|^email$/i.test(type)) return name ? `Email ("${name}")` : 'Email';
-    if (/\bsms\b/i.test(type)) return name ? `SMS ("${name}")` : 'SMS';
-    if (/\bpush\b/i.test(type)) return name ? `Push ("${name}")` : 'Push Notification';
-    if (/content.?card/i.test(type)) return name ? `Content Card ("${name}")` : 'Content Card';
-    if (/direct.?mail/i.test(type)) return name ? `Direct Mail ("${name}")` : 'Direct Mail';
-    if (/web.?action|\bweb\b/i.test(type)) return name ? `Web Action ("${name}")` : 'Web Action';
-    if (/code.?based/i.test(type)) return name ? `Code-Based ("${name}")` : 'Code-Based Experience';
-    if (/custom_action|\bcustom\b/i.test(type)) return name ? `Custom Action ("${name}")` : 'Custom Action';
-    if (END_TYPES.test(type)) return 'End';
-    return name ? `${type} ("${name}")` : type || 'Unknown Node';
   }
 
-  // Recursive path builder; returns array of lines
-  function walk(nodeId, depth, branchLabel) {
-    if (depth > 15 || visited.has(nodeId)) return ['…(cycle or depth limit)'];
-    visited.add(nodeId);
-    const n = nodeMap.get(nodeId);
-    if (!n) return [];
+  // DFS to build human-readable flow text
+  function nodeLabel(nd) {
+    const type = (nd.type || nd.nodeType || nd.actionType || '').toLowerCase();
+    const nm   = nd.name || nd.label || '';
+    if (EVENT_TYPES.test(type)) {
+      const base = (type === 'read_segment' || type === 'audience_entry') ? 'Audience Entry' : 'Event Trigger';
+      return nm ? `${base}: ${nm} [entry point]` : `${base} [entry point]`;
+    }
+    if (COND_TYPES.test(type)) {
+      const bc = Array.isArray(nd.transitions) ? nd.transitions.length : 0;
+      return nm ? `Condition: ${nm}${bc > 1 ? ` [${bc} branches]` : ''}` : `Condition${bc > 1 ? ` [${bc} branches]` : ''}`;
+    }
+    if (/\btimer\b|\bwait\b/i.test(type)) {
+      const dur  = nd.waitDuration || nd.duration || '';
+      const unit = (nd.waitUnit || nd.unit || '').replace(/s$/, '');
+      return dur ? `Wait: ${dur}${unit ? ' ' + unit : ''} [timing gate]` : 'Wait [timing gate]';
+    }
+    if (/inapp|in.app|\biam\b/i.test(type))      return nm ? `In-App: ${nm} [in-app]`      : 'In-App Message [in-app]';
+    if (/email_message|^email$/i.test(type))      return nm ? `Email: ${nm} [email]`         : 'Email [email]';
+    if (/\bsms\b/i.test(type))                    return nm ? `SMS: ${nm} [sms]`              : 'SMS [sms]';
+    if (/\bpush\b/i.test(type))                   return nm ? `Push: ${nm} [push]`            : 'Push Notification [push]';
+    if (/content.?card/i.test(type))              return nm ? `Content Card: ${nm}`           : 'Content Card';
+    if (/direct.?mail/i.test(type))               return nm ? `Direct Mail: ${nm}`            : 'Direct Mail';
+    if (/web.?action|\bweb\b/i.test(type))        return nm ? `Web Action: ${nm}`             : 'Web Action';
+    if (/code.?based/i.test(type))                return nm ? `Code-Based: ${nm}`             : 'Code-Based Experience';
+    if (/custom_action|\bcustom\b/i.test(type))   return nm ? `Custom Action: ${nm}`          : 'Custom Action';
+    if (END_TYPES.test(type)) return 'End';
+    return nm ? `${type}: ${nm}` : type || 'Unknown Node';
+  }
 
-    const type = (n.type || n.nodeType || '').toLowerCase();
-    const isEnd = END_TYPES.test(type);
+  const dfsVisited = new Set();
+  function walk(nodeId, depth, branchLabel) {
+    if (depth > 15 || dfsVisited.has(nodeId)) return ['...(cycle or depth limit)'];
+    dfsVisited.add(nodeId);
+    const nd = nodeMap.get(nodeId);
+    if (!nd) return [];
+
+    const type   = (nd.type || nd.nodeType || '').toLowerCase();
+    const isEnd  = END_TYPES.test(type);
     const indent = '   '.repeat(depth);
-    const prefix = depth === 0 ? '' : (branchLabel ? `[${branchLabel}] ` : '→ ');
-    const label = isEnd ? 'End' : nodeLabel(n);
-    const lines = [`${indent}${prefix}${label}`];
+    const prefix = depth === 0 ? '' : (branchLabel ? `[${branchLabel}] ` : '-> ');
+    const label  = isEnd ? 'End' : nodeLabel(nd);
+    const lines  = [`${indent}${prefix}${label}`];
 
     if (isEnd) return lines;
 
-    const transitions = Array.isArray(n.transitions) ? n.transitions : [];
-
+    const transitions = Array.isArray(nd.transitions) ? nd.transitions : [];
     if (COND_TYPES.test(type) && transitions.length > 1) {
-      // Branch — render each transition as an indented sub-path
       transitions.forEach((t) => {
         const branchName = t.name || t.label || t.type || 'branch';
         const nextId = t.nextNodeId || t.targetNodeId || t.id;
-        if (nextId && !visited.has(nextId)) {
-          const subLines = walk(nextId, depth + 1, branchName);
-          lines.push(...subLines);
+        if (nextId && !dfsVisited.has(nextId)) {
+          lines.push(...walk(nextId, depth + 1, branchName));
         } else if (!nextId) {
-          lines.push(`${'   '.repeat(depth + 1)}[${branchName}] → End`);
+          lines.push(`${'   '.repeat(depth + 1)}[${branchName}] -> End`);
         }
       });
     } else if (transitions.length === 1) {
       const nextId = transitions[0].nextNodeId || transitions[0].targetNodeId;
       if (nextId) {
-        const subLines = walk(nextId, depth, null);
-        // Inline single transitions with →
-        if (subLines.length === 1) {
-          lines[lines.length - 1] += ` → ${subLines[0].trimStart()}`;
+        const sub = walk(nextId, depth, null);
+        if (sub.length === 1) {
+          lines[lines.length - 1] += ` -> ${sub[0].trimStart()}`;
         } else {
-          lines.push(...subLines);
+          lines.push(...sub);
         }
       }
-    } else if (transitions.length === 0) {
-      // No explicit transitions — try nextNodeId directly on node
-      const nextId = n.nextNodeId || n.targetNodeId;
-      if (nextId && !visited.has(nextId)) {
-        const subLines = walk(nextId, depth, null);
-        lines.push(...subLines);
-      }
+    } else if (!transitions.length) {
+      const nextId = nd.nextNodeId || nd.targetNodeId;
+      if (nextId && !dfsVisited.has(nextId)) lines.push(...walk(nextId, depth, null));
     }
 
     return lines;
   }
 
   try {
-    const lines = walk(startId, 0, null);
-    return lines.join('\n');
+    const flowText = walk(startId, 0, null).join('\n');
+    return { flowText, maxDepth };
   } catch (_) {
-    return null;
+    return { flowText: null, maxDepth };
   }
 }
 
-// ── Business signal checklist builder ────────────────────────────────────────
-function buildBusinessSignals(actions, events, conditions, audienceNames, audienceId, description) {
-  const hasAudienceQualification = !!(events.length || audienceId || audienceNames.length);
-  const hasMessagingActions = actions.filter((a) => {
-    const t = (a.type || a.nodeType || a.actionType || '').toLowerCase();
-    return /inapp|in.app|\biam\b|email|sms|push|content.?card|direct.?mail|web.?action|code.?based/i.test(t);
-  }).length > 0;
-  const hasBranching = conditions.length > 0;
-  const hasWaitLogic = actions.filter((a) => /\btimer\b|\bwait\b/i.test((a.type || a.nodeType || '').toLowerCase())).length > 0;
-  const hasNamedSegments = audienceNames.length > 0;
-  const hasDescription = !!(description && description.trim());
-  const isStructureEmpty = actions.length === 0 && conditions.length === 0 && events.length === 0;
+// ── Audience summary builder ──────────────────────────────────────────────────
+function buildAudienceSummary(events, conditions, audienceNames, audienceId, triggerInfo) {
+  const lines = [];
 
-  const yn = (v) => v ? 'YES' : 'no';
+  if (triggerInfo) {
+    lines.push(`- Entry qualification:       ${triggerInfo}`);
+  } else if (audienceId) {
+    lines.push(`- Entry qualification:       Audience segment (ID: ${audienceId})`);
+  } else {
+    lines.push(`- Entry qualification:       none detected`);
+  }
+
+  if (audienceNames.length) {
+    lines.push(`- Named audience segments:   ${audienceNames.join(', ')}`);
+  } else {
+    lines.push(`- Named audience segments:   none detected`);
+  }
+
+  const conditionLabels = conditions.map((c) => c.name || '').filter(Boolean).slice(0, 8);
+  if (conditionLabels.length) {
+    lines.push(`- Segmentation conditions:   ${conditionLabels.join(', ')}`);
+  }
+
+  lines.push(`- Personalized segmentation: ${audienceNames.length > 0 && conditions.length > 0 ? 'YES' : 'no'}`);
+  return lines.join('\n');
+}
+
+// ── Unified journey structure block ──────────────────────────────────────────
+// Merges former BUSINESS SIGNALS + FLOW METRICS into one compact block.
+function buildJourneyStructure(actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth) {
+  const {
+    inAppCount = 0, emailCount = 0, smsCount = 0, pushCount = 0,
+    contentCardCount = 0, directMailCount = 0, webCount = 0, codeBasedCount = 0,
+    customCount = 0, timerCount = 0,
+  } = channelCounts;
+
+  const totalNodes    = actions.length + events.length + conditions.length;
+  const totalBranches = conditions.reduce(
+    (sum, c) => sum + (Array.isArray(c.transitions) ? Math.max(0, c.transitions.length - 1) : 0), 0,
+  );
+  const messagingCount = inAppCount + emailCount + smsCount + pushCount
+    + contentCardCount + directMailCount + webCount + codeBasedCount + customCount;
+  const waitSteps      = actions.filter((a) => /\btimer\b|\bwait\b/i.test((a.type || a.nodeType || '').toLowerCase())).length;
+  const complexity     = totalNodes >= 8 || totalBranches >= 3 ? 'HIGH'
+    : totalNodes >= 4 || totalBranches >= 1 ? 'MEDIUM' : 'LOW';
+
+  const msgDetail = (() => {
+    const p = [];
+    if (inAppCount)       p.push(`in-app: ${inAppCount}`);
+    if (emailCount)       p.push(`email: ${emailCount}`);
+    if (smsCount)         p.push(`sms: ${smsCount}`);
+    if (pushCount)        p.push(`push: ${pushCount}`);
+    if (contentCardCount) p.push(`content-card: ${contentCardCount}`);
+    if (directMailCount)  p.push(`direct-mail: ${directMailCount}`);
+    if (webCount)         p.push(`web: ${webCount}`);
+    if (codeBasedCount)   p.push(`code-based: ${codeBasedCount}`);
+    if (customCount)      p.push(`custom: ${customCount}`);
+    return p.length ? ` (${p.join(', ')})` : '';
+  })();
+
+  const yn = (v) => (v ? 'YES' : 'no');
 
   return [
-    `- Has audience qualification:       ${yn(hasAudienceQualification)}`,
-    `- Has customer messaging actions:   ${yn(hasMessagingActions)}`,
-    `- Has segmentation/branching logic: ${yn(hasBranching)}`,
-    `- Has wait/timing logic:            ${yn(hasWaitLogic)}`,
-    `- Has named audience segments:      ${audienceNames.length ? 'YES (' + audienceNames.join(', ') + ')' : 'no'}`,
-    `- Has description:                  ${hasDescription ? 'YES: "' + description.slice(0, 120) + '"' : 'no'}`,
-    `- Structure is empty/shell:         ${yn(isStructureEmpty)}`,
+    `- Total nodes:               ${totalNodes} | Complexity: ${complexity}`,
+    `- Branch count:              ${totalBranches} (${conditions.length} condition node${conditions.length !== 1 ? 's' : ''})`,
+    `- Max path depth (BFS):      ${maxDepth} steps`,
+    `- Message touchpoints:       ${messagingCount > 0 ? 'YES' + msgDetail : 'no'}`,
+    `- Wait/timing steps:         ${waitSteps > 0 ? `YES (${waitSteps})` : 'no'}`,
+    `- Audience qualification:    ${yn(!!(events.length || audienceId || audienceNames.length))}`,
+    `- Named audience segments:   ${audienceNames.length ? audienceNames.join(', ') : 'none'}`,
+    `- Personalized segmentation: ${yn(audienceNames.length > 0 && conditions.length > 0)}`,
+    `- Has description:           ${description && description.trim() ? 'YES' : 'no'}`,
+    `- Empty/shell structure:     ${yn(totalNodes === 0)}`,
   ].join('\n');
+}
+
+// ── Operational signals builder ───────────────────────────────────────────────
+function buildOperationalSignals(meta, sched, exitArr, status) {
+  const lastPublishedAt  = meta.lastDeployedAt || meta.publishedAt || meta.lastPublishedAt || '';
+  const daysSincePublish = lastPublishedAt
+    ? Math.floor((Date.now() - new Date(lastPublishedAt).getTime()) / 86400000)
+    : null;
+
+  const now = Date.now();
+  const schedStart = sched.startDate || sched.startTime || sched.start || '';
+  const schedEnd   = sched.endDate   || sched.endTime   || sched.end   || '';
+  const schedActive = schedStart
+    ? (new Date(schedStart).getTime() <= now && (!schedEnd || new Date(schedEnd).getTime() > now))
+    : false;
+
+  const isLive     = status === 'live' || status === 'published';
+  const isStopped  = status === 'stopped' || status === 'closed';
+  const hasExitCriteria = exitArr.length > 0;
+
+  return [
+    `- Current status:            ${status}`,
+    `- Last published:            ${lastPublishedAt ? lastPublishedAt.slice(0, 10) : 'never / unknown'}`,
+    `- Days since published:      ${daysSincePublish !== null ? daysSincePublish : 'n/a'}`,
+    `- Schedule active now:       ${schedActive ? 'YES' : 'no'}`,
+    `- Has exit criteria:         ${yn(hasExitCriteria)}`,
+    `- Intentionally stopped:     ${yn(isStopped)}`,
+  ].join('\n');
+
+  function yn(v) { return v ? 'YES' : 'no'; }
 }
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(journey) {
-  const meta = journey.metadata || {};
-  const name = journey.name || '(unnamed)';
-  const status = journey.status || 'unknown';
-  const version = journey.version || '1';
+  const meta     = journey.metadata || {};
+  const name     = journey.name || '(unnamed)';
+  const status   = (journey.status || 'unknown').toLowerCase();
+  const version  = journey.version || '1';
   const daysStale = journey._daysStale || 0;
-  const createdBy = meta.createdBy || 'unknown';
-  const createdAt = meta.createdAt ? meta.createdAt.slice(0, 10) : 'unknown';
+  const createdBy  = meta.createdBy || 'unknown';
+  const createdAt  = meta.createdAt ? meta.createdAt.slice(0, 10) : 'unknown';
   const modifiedBy = meta.lastModifiedBy || 'unknown';
   const modifiedAt = meta.lastModifiedAt ? meta.lastModifiedAt.slice(0, 10) : 'unknown';
   const lastDeployedBy = meta.lastDeployedBy || '';
   const lastDeployedAt = meta.lastDeployedAt ? meta.lastDeployedAt.slice(0, 10) : '';
-  const isDefaultName = journey._isDefaultName ? 'YES — user never renamed it (strong abandonment signal)' : 'No';
+  const isDefaultName  = journey._isDefaultName
+    ? 'YES — never renamed (strong abandonment signal)' : 'No';
 
-  // ── Extra journey configuration fields ────────────────────────────────────
-  const sandboxName = journey.sandboxName || journey.sandbox || '';
-  const category = journey.category || '';
-  // Journey type (unitary = event-triggered, read_segment = audience batch)
   const journeyApiType = journey.type || '';
+  const sandboxName    = journey.sandboxName || journey.sandbox || '';
+  const category       = journey.category || '';
+  const description    = journey.description || '';
 
-  // Schedule — AJO API uses startDate/timezone (not startTime/start)
-  const sched = journey.schedule || {};
-  const schedStart = sched.startDate
-    ? String(sched.startDate).slice(0, 10)
-    : (sched.startTime ? String(sched.startTime).slice(0, 10) : (sched.start ? String(sched.start).slice(0, 10) : ''));
-  const schedEnd = sched.endDate
-    ? String(sched.endDate).slice(0, 10)
-    : (sched.endTime ? String(sched.endTime).slice(0, 10) : (sched.end ? String(sched.end).slice(0, 10) : ''));
-  const schedTimezone = sched.timezone || sched.timeZone || journey.timeZone || '';
-  const schedUseProfileTz = sched.useProfileTimezone != null ? sched.useProfileTimezone : null;
-  const schedType = sched.type || sched.scheduleType || '';
-  const schedParts = [
-    schedType || (schedStart ? 'scheduled' : ''),
+  // Schedule
+  const sched       = journey.schedule || {};
+  const schedStart  = (sched.startDate || sched.startTime || sched.start || '').toString().slice(0, 10);
+  const schedEnd    = (sched.endDate   || sched.endTime   || sched.end   || '').toString().slice(0, 10);
+  const schedTz     = sched.timezone || sched.timeZone || journey.timeZone || '';
+  const schedLine   = [
     schedStart ? `starts ${schedStart}` : '',
-    schedEnd ? `ends ${schedEnd}` : '',
-    schedTimezone ? `tz: ${schedTimezone}` : '',
-    schedUseProfileTz === true ? 'uses profile timezone' : '',
-  ].filter(Boolean);
-  const schedLine = schedParts.length ? schedParts.join(', ') : 'none / unknown';
-
-  // Reentrance policy
-  const reentrance = journey.reentrance || {};
-  const reentPolicy = reentrance.policy || '';
-  const reentDuration = reentrance.durationInSecs != null ? `${reentrance.durationInSecs}s window` : '';
-  const reentLine = reentPolicy
-    ? `${reentPolicy}${reentDuration ? ' (' + reentDuration + ')' : ''}`
-    : 'none / unknown';
-
-  // Entry configuration
-  const entryCfg = journey.entryConfiguration || journey.entryConfig || {};
-  const entryLimit = entryCfg.entryLimit != null ? String(entryCfg.entryLimit) : '';
-  const reEntryCriteria = entryCfg.reEntryCriteria || entryCfg.reentry || '';
-  const entryLine = [
-    entryLimit ? `limit: ${entryLimit}` : '',
-    reEntryCriteria ? `re-entry criteria: ${reEntryCriteria}` : '',
+    schedEnd   ? `ends ${schedEnd}`     : '',
+    schedTz    ? `tz: ${schedTz}`       : '',
   ].filter(Boolean).join(', ') || 'none / unknown';
 
+  // Re-entrance
+  const reentrance  = journey.reentrance || {};
+  const reentPolicy = reentrance.policy || '';
+  const reentDur    = reentrance.durationInSecs != null ? `${reentrance.durationInSecs}s window` : '';
+  const reentLine   = reentPolicy ? `${reentPolicy}${reentDur ? ' (' + reentDur + ')' : ''}` : 'none / unknown';
+
   // Exit criteria
-  const exitArr = Array.isArray(journey.exitCriteria) ? journey.exitCriteria : (journey.exitCriteria ? [journey.exitCriteria] : []);
+  const exitArr  = Array.isArray(journey.exitCriteria)
+    ? journey.exitCriteria : (journey.exitCriteria ? [journey.exitCriteria] : []);
   const exitLine = exitArr.length
     ? exitArr.map((x) => x.type || x.condition || JSON.stringify(x)).join('; ')
-    : 'none / unknown';
+    : 'none';
 
-  // Timeouts
-  const timeouts = journey.timeouts || {};
-  const timeoutLine = (timeouts.actionExecution != null || timeouts.entityEnrichment != null)
-    ? `action: ${timeouts.actionExecution || '?'}s, enrichment: ${timeouts.entityEnrichment || '?'}s`
-    : '';
-
-  const { actions, events, conditions, allNodes } = extractNodes(journey);
-  // Build human-readable flow path (graph traversal)
-  const flowPath = buildFlowPath(journey);
-
-  // Safely serialize tags — AJO returns tag objects {id, name}, not plain strings
-  const rawTags = journey.tags || [];
+  // Tags
+  const rawTags  = journey.tags || [];
   const tagNames = rawTags
-    .map((t) => {
-      if (typeof t === 'string') return t;
-      // Only use name/label/title if non-null and non-empty
-      return (t.name && t.name.trim()) || (t.label && t.label.trim()) || (t.title && t.title.trim()) || null;
-    })
+    .map((t) => (typeof t === 'string' ? t : (t.name || t.label || t.title || '').trim()))
     .filter(Boolean);
 
-  const description = journey.description || '';
+  // Nodes
+  const { actions, events, conditions, allNodes } = extractNodes(journey);
 
-  // audienceId may live at top level or inside a canvas read-segment node
-  const audienceId = journey.audienceId
-    || journey.segmentId
-    || journey.segment?.id
-    || (events.find((e) => e.segmentId || e.audienceId) || {}).segmentId
-    || (events.find((e) => e.segmentId || e.audienceId) || {}).audienceId
-    || '';
-
-  // ── Channel counts using improved extractor ────────────────────────────────
+  // Channel counts
+  const channelCounts = extractChannelSummary(actions);
   const {
     emailCount, smsCount, pushCount, inAppCount, contentCardCount,
     directMailCount, webCount, codeBasedCount, timerCount, customCount,
-  } = extractChannelSummary(actions);
+  } = channelCounts;
 
-  // ── Audience names from condition expressions ──────────────────────────────
-  // Scan all nodes (conditions have transitions with expressions)
+  // Audience data
+  const audienceId = journey.audienceId || journey.segmentId || journey.segment?.id
+    || (events.find((e) => e.segmentId || e.audienceId) || {}).segmentId
+    || (events.find((e) => e.segmentId || e.audienceId) || {}).audienceId || '';
   const allForAudience = allNodes.length ? allNodes : [...actions, ...events, ...conditions];
-  const audienceNames = extractAudienceNames(allForAudience);
+  const audienceNames  = extractAudienceNames(allForAudience);
+  const triggerInfo    = extractTriggerInfo(events);
 
-  // ── Entry trigger info ─────────────────────────────────────────────────────
-  const triggerInfo = extractTriggerInfo(events);
+  // Flow path + BFS depth
+  const { flowText, maxDepth } = buildFlowPath(journey);
 
-  // ── Condition names (the business logic labels) ────────────────────────────
-  const conditionNames = conditions
-    .map((c) => c.name || '')
-    .filter(Boolean)
-    .slice(0, 10); // cap at 10
+  // Audience summary
+  const audienceSummary = buildAudienceSummary(events, conditions, audienceNames, audienceId, triggerInfo);
 
-  // ── Action node names (email/custom action names) ─────────────────────────
-  const actionNames = actions
-    .map((a) => a.name || '')
-    .filter((n) => n && !/^(wait|timer)/i.test(n))
-    .slice(0, 8);
+  // Unified structure block
+  const journeyStructure = buildJourneyStructure(
+    actions, events, conditions, channelCounts, audienceNames, audienceId, description, maxDepth,
+  );
+
+  // Operational signals
+  const operationalSignals = buildOperationalSignals(meta, sched, exitArr, status);
+
+  // Condition + action labels
+  const conditionNames = conditions.map((c) => c.name || '').filter(Boolean).slice(0, 10);
+  const actionNames    = actions.map((a) => a.name || '')
+    .filter((nm) => nm && !/^(wait|timer)/i.test(nm)).slice(0, 8);
 
   const nodeCount = actions.length + events.length + conditions.length;
 
-  // ── Trim raw nodes for LLM context (keep only meaningful fields) ──────────
-  const NODE_FIELDS = ['id', 'type', 'nodeType', 'actionType', 'name', 'label',
-    'expression', 'channelType', 'waitDuration', 'waitUnit', 'transitions',
-    'eventType', 'segmentId', 'audienceId'];
-  const MAX_NODES = 50;
-  const trimmedNodes = allNodes.length > 0
-    ? allNodes.slice(0, MAX_NODES).map((n) => {
-      const out = {};
-      NODE_FIELDS.forEach((k) => { if (n[k] != null) out[k] = n[k]; });
-      // Trim transitions — only keep type, condition/expression, name
-      if (Array.isArray(out.transitions)) {
-        out.transitions = out.transitions.map((t) => {
-          const tt = {};
-          if (t.type != null) tt.type = t.type;
-          if (t.name != null) tt.name = t.name;
-          if (t.condition != null) tt.condition = t.condition;
-          if (t.expression != null) tt.expression = t.expression;
-          return tt;
-        });
-      }
-      return out;
-    })
-    : [];
+  // Pre-classifier hint
+  const preClass   = preClassifyJourney(name, { actions, events, conditions }, channelCounts, triggerInfo);
+  const nameHint   = inferJourneyTypeFromName(name);
+  const typeHintLine = preClass
+    ? `Pre-classification: "${preClass.type}" (rule confidence: ${preClass.confidence}% — confirm or override based on structure)`
+    : (nameHint
+      ? `Name-based type hint: "${nameHint}" (weak signal — structure takes precedence)`
+      : 'Type hint: unclear');
 
-  // Build business signals checklist
-  const allForAudienceSignals = allNodes.length ? allNodes : [...actions, ...events, ...conditions];
-  const businessSignals = buildBusinessSignals(actions, events, conditions, audienceNames, audienceId, description);
-
-  // Name-based type hint — used as supporting signal when structure is empty
-  const nameTypeHint = inferJourneyTypeFromName(name);
-  const nameHintLine = nameTypeHint
-    ? `Name-based type hint: "${nameTypeHint}" (supporting signal — structure takes precedence)`
-    : 'Name-based type hint: unclear';
-
-  // Structural data availability note
   const structureNote = nodeCount === 0
-    ? '⚠ No structural node data available from API — rely on name, status, tags, and description for classification.'
+    ? 'WARNING: No structural node data from API — rely on name, status, tags, and description.'
     : '';
 
-  // Raw node section — supplementary only, moved to bottom
-  const rawNodeSection = trimmedNodes.length > 0
-    ? `\nSUPPLEMENTARY NODE DATA (for reference only — use JOURNEY FLOW above as primary structure signal):\n${JSON.stringify(trimmedNodes)}\n`
-    : '';
+  return `You are an Adobe Journey Optimizer governance expert. Analyze this journey and return a JSON verdict.
 
-  // Channel count summary line
-  const channelSummary = [
-    emailCount       ? `email: ${emailCount}`              : '',
-    smsCount         ? `SMS: ${smsCount}`                  : '',
-    pushCount        ? `push: ${pushCount}`                : '',
-    inAppCount       ? `in-app: ${inAppCount}`             : '',
-    contentCardCount ? `content card: ${contentCardCount}` : '',
-    directMailCount  ? `direct mail: ${directMailCount}`   : '',
-    webCount         ? `web: ${webCount}`                  : '',
-    codeBasedCount   ? `code-based: ${codeBasedCount}`     : '',
-    timerCount       ? `timer/wait: ${timerCount}`         : '',
-    customCount      ? `custom: ${customCount}`            : '',
-  ].filter(Boolean).join(', ') || 'none';
+CLASSIFICATION RULES (follow in priority order):
+1. STRUCTURE IS PRIMARY. Flow path, audience logic, conditions, and message actions reveal intent.
+2. Draft = unpublished, not abandoned. A draft with entry logic + conditions + message actions has real purpose.
+3. Staleness affects retirement priority only — not business purpose.
+4. Name tokens (Delete/Test/Old/v2/copy) are WEAK signals — cannot override structural evidence.
+5. If journey has >=1 entry event AND >=1 condition AND >=1 message action → businessPurpose must describe the workflow.
+   "No identifiable business purpose" is only valid when: AJO default name AND 0 message actions AND 0 conditions AND no description.
+6. Test/POC requires: placeholder name AND trivial structure (<=1 node, no audience logic, no messaging).
+7. If useCaseSummary describes a real workflow, businessPurpose must also describe a real purpose.
 
-  return `You are an Adobe Journey Optimizer governance and lifecycle analysis expert.
-
-Your job has four steps, which you MUST complete in order:
-  Step 1 — Understand what the journey does (business classification)
-  Step 2 — Identify who it targets (audience and purpose)
-  Step 3 — Assess operational status and staleness
-  Step 4 — Recommend whether to keep, review, or retire
-
-Complete Steps 1 and 2 fully before drawing any conclusions about retirement.
-
-══════════════════════════════════════════════════════
-CLASSIFICATION RULES (follow strictly, in priority order)
-══════════════════════════════════════════════════════
-1. STRUCTURE IS THE PRIMARY SIGNAL. Journey flow, audience logic, conditions, and
-   message actions reveal business intent. Use them first.
-
-2. Draft status means UNPUBLISHED — not abandoned and not purposeless.
-   A Draft journey with entry logic, conditions, and message actions has real
-   business purpose regardless of how long it has been in draft.
-
-3. Staleness (days since last modified) affects retirement priority ONLY.
-   It does NOT determine business purpose. A 200-day-stale journey with a real
-   workflow is not the same as a 200-day-stale empty shell.
-
-4. Name tokens ("Delete", "Test", "Old", "v2", "copy") are WEAK signals.
-   They raise suspicion but CANNOT override structural evidence.
-   If the flow shows audience qualification + conditions + message actions,
-   the journey has business purpose regardless of what the name says.
-
-5. IF a journey has ≥1 entry event OR audience qualifier PLUS ≥1 condition PLUS
-   ≥1 message action → businessPurpose MUST describe what that workflow does.
-   "No identifiable business purpose" is ONLY valid when ALL of these are true:
-     a) name is a generic AJO default (e.g. "Journey1082")  AND
-     b) 0 message actions  AND
-     c) 0 conditions  AND
-     d) no description or tags providing context.
-
-6. Test/POC classification requires: a placeholder/generic name AND
-   empty or trivial structure (≤1 node, no real audience logic, no message actions).
-   A journey with segmentation, branching, and in-app messaging is NOT Test/POC
-   even if the name contains "Test", "Delete", or "POC".
-
-7. CONSISTENCY RULE: If useCaseSummary describes a real workflow,
-   businessPurpose must also describe a real purpose. Contradictory output is invalid.
-
-══════════════════════════════════════════════════════
-CALIBRATION EXAMPLES
-══════════════════════════════════════════════════════
-EXAMPLE A — Real journey with a suspicious name (CORRECT classification):
-  name: "Delete_InApp_Auth_v2" | status: draft | days_stale: 95
-  flow: Audience Entry ("App Users") → In-App Message ("Sign-in Prompt")
-        → Condition ("Paid vs Free")
-           [Paid] → End
-           [Free] → In-App Message ("Credit Modal IAM") → Wait (24h) → End
-  business signals: audience qualification YES, messaging YES, branching YES
-
-  CORRECT output:
-    journeyType: "Retention"
-    useCaseSummary: "Delivers in-app authentication messaging to app users with a paid vs
-      free branch — paid users exit immediately, free users receive a credit modal IAM
-      followed by a 24-hour wait."
-    targetAudience: "App users, segmented into paid and free tiers"
-    businessPurpose: "Qualifies app users and delivers targeted in-app auth messaging
-      based on subscription tier"
-    businessValue: "medium"
-    retirementScore: 58
-    retirementLabel: "Review First"
-    confidence: 75
-    reasoning: "Draft status and 'Delete' in the name are weak signals that do not
-      override the structural evidence. The journey has a real audience qualifier, an
-      in-app message action, a paid/free condition branch, and a wait step — consistent
-      with a live retention or onboarding auth flow. Recommend owner review before
-      any retirement action."
-    recommendation: "Review with owner"
-
-EXAMPLE B — Empty shell (CORRECT classification):
-  name: "Journey1082" | status: draft | days_stale: 210
-  flow: (no nodes — 0 actions, 0 conditions, 0 events)
-  business signals: all NO
-
-  CORRECT output:
-    journeyType: "Unknown"
-    useCaseSummary: "Unable to determine — no structural nodes present"
-    targetAudience: "Unknown"
-    businessPurpose: "No identifiable business purpose"
-    businessValue: "low"
-    retirementScore: 88
-    retirementLabel: "Safe to Retire"
-    confidence: 90
-    reasoning: "AJO default name that was never renamed, zero structural nodes, 210
-      days stale. There is nothing to preserve and no evidence of business intent."
-    recommendation: "Archive"
-
-══════════════════════════════════════════════════════
-JOURNEY DATA
-══════════════════════════════════════════════════════
-METADATA:
-- Name: "${name}"
-- Status: ${status} | Version: ${version} | Days stale: ${daysStale}
-- Journey execution type: ${journeyApiType || 'unknown'} (unitary = event-triggered; read_segment = audience batch)
-- Created by: ${createdBy} on ${createdAt}
-- Last modified by: ${modifiedBy} on ${modifiedAt}
-${lastDeployedBy ? `- Last deployed by: ${lastDeployedBy} on ${lastDeployedAt}` : ''}
-- Name is AJO default (never renamed): ${isDefaultName}
-- ${nameHintLine}
-${sandboxName ? `- Sandbox: ${sandboxName}` : ''}
-${category ? `- Category: ${category}` : ''}
-- Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
+JOURNEY DATA:
+Name: "${name}"
+Status: ${status} | Version: ${version} | Days stale: ${daysStale}
+Execution type: ${journeyApiType || 'unknown'} (unitary=event-triggered; read_segment=audience-batch)
+Created by: ${createdBy} on ${createdAt} | Modified by: ${modifiedBy} on ${modifiedAt}
+${lastDeployedBy ? `Deployed by: ${lastDeployedBy} on ${lastDeployedAt}` : ''}
+Default AJO name (never renamed): ${isDefaultName}
+${sandboxName ? `Sandbox: ${sandboxName}` : ''}${category ? ` | Category: ${category}` : ''}
+Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
+${typeHintLine}
 
 CONFIGURATION:
-- Schedule: ${schedLine}
-- Re-entrance policy: ${reentLine}
-- Entry configuration: ${entryLine}
-- Exit criteria: ${exitLine}
-${timeoutLine ? `- Timeouts: ${timeoutLine}` : ''}
+Schedule: ${schedLine} | Re-entrance: ${reentLine} | Exit criteria: ${exitLine}
 
-JOURNEY FLOW (primary structure signal):
-${flowPath
-    ? flowPath
-    : structureNote
-      ? structureNote
-      : '(flow path unavailable — transitions not present in API response)'}
+JOURNEY FLOW (primary signal):
+${flowText || structureNote || '(flow unavailable — no transitions in API response)'}
 
-NODE COUNTS:
-  entry events: ${events.length} | message actions: ${actions.length} (${channelSummary}) | conditions: ${conditions.length}
-${structureNote && !flowPath ? '  ' + structureNote : ''}
+JOURNEY STRUCTURE:
+${journeyStructure}
+${structureNote && !flowText ? '\n' + structureNote : ''}
 
-ACTION NAMES:      ${actionNames.length ? actionNames.join(' | ') : 'none'}
-CONDITION NAMES:   ${conditionNames.length ? conditionNames.join(' | ') : 'none'}
-AUDIENCE SEGMENTS: ${audienceNames.length ? audienceNames.join(', ') : 'none detected'}
-AUDIENCE ID:       ${audienceId || 'none'}
-ENTRY TRIGGER:     ${triggerInfo || 'none / unknown'}
+NODE LABELS:
+Entry events: ${events.length} | Message actions: ${actions.length} | Conditions: ${conditions.length}
+Action names:    ${actionNames.length ? actionNames.join(' | ') : 'none'}
+Condition names: ${conditionNames.length ? conditionNames.join(' | ') : 'none'}
 
-BUSINESS SIGNALS:
-${businessSignals}
-${rawNodeSection}
-══════════════════════════════════════════════════════
-YOUR TASKS
-══════════════════════════════════════════════════════
-Work through these in order. Do NOT jump to retirement before completing Steps 1–2.
+TARGET AUDIENCE:
+${audienceSummary}
 
-STEP 1 — BUSINESS UNDERSTANDING:
-  What does this journey do? (use flow path, action names, condition names)
-  Who does it target? (use audience segments, entry trigger, condition logic)
-  What business process does it serve?
+OPERATIONAL SIGNALS:
+${operationalSignals}
 
-STEP 2 — OPERATIONAL STATUS:
-  Is it active, intentionally paused, or truly abandoned?
-  Is the staleness consistent with an intentional draft/pause or with abandonment?
-  (Hint: a journey with real structure and a "Delete" name is more likely an
-   intentional draft than a genuinely abandoned empty shell)
-
-STEP 3 — RECOMMENDATION:
-  Based on your answers to Steps 1 and 2, assign retirementScore and retirementLabel.
-  retirementScore: 0–49 = Keep Active, 50–79 = Review First, 80–100 = Safe to Retire
-
-Return ONLY valid JSON — no markdown fences, no text outside the JSON object:
+Analyze this journey. Return ONLY valid JSON — no markdown, no text outside the object:
 {
   "journeyType": "Welcome|Promotional|Transactional|Re-engagement|Abandoned Cart|Onboarding|Retention|Test/POC|Unknown",
-  "useCaseSummary": "What this journey does — inferred from flow path, action names, condition names, and audience. Be specific.",
-  "targetAudience": "Who this journey targets based on audience segments and condition logic, or 'Unknown'",
+  "useCaseSummary": "What this journey does — inferred from flow, action names, conditions, and audience.",
+  "targetAudience": "Who it targets based on audience segments and conditions, or 'Unknown'",
   "businessValue": "low|medium|high",
-  "businessPurpose": "One sentence describing the business process this journey serves, or 'No identifiable business purpose' only if Rule 5 conditions are fully met",
+  "businessPurpose": "One sentence describing the business process, or 'No identifiable business purpose' only if rule 5 conditions are fully met",
   "retirementScore": 0-100,
   "retirementLabel": "Safe to Retire|Review First|Keep Active",
   "confidence": 0-100,
-  "reasoning": "2-3 sentences explaining your verdict. Reference specific signals: flow structure, audience names, condition names, action types, status, staleness. Do not contradict your useCaseSummary.",
+  "reasoning": "2-3 sentences citing specific signals: flow structure, audience names, condition names, action types, status, staleness.",
   "recommendation": "Archive|Review with owner|Keep|Contact owner before deleting"
 }`;
 }
@@ -1013,7 +889,6 @@ Return ONLY valid JSON — no markdown fences, no text outside the JSON object:
 // ── /health ───────────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
   const start = Date.now();
-  // Force a live probe so /health always reflects current state
   await checkOllamaAvailability();
   const ms = Date.now() - start;
   if (ollamaOnline) {
@@ -1022,15 +897,10 @@ app.get('/health', async (_req, res) => {
       const data = await r.json();
       const models = (data.models || []).map((m) => m.name);
       log('info', '🩺 Health check', {
-        ollama: 'connected',
-        model: MODEL,
-        available_models: models.join(',') || '(none)',
-        ms: `${ms}ms`,
+        ollama: 'connected', model: MODEL, available_models: models.join(',') || '(none)', ms: `${ms}ms`,
       });
       return res.json({ status: 'ok', model: MODEL, ollama: 'connected', availableModels: models, lastChecked: ollamaLastChecked });
-    } catch (e) {
-      // fall through
-    }
+    } catch (e) { /* fall through */ }
   }
   log('error', '🩺 Health check failed — Ollama unreachable', { ms: `${ms}ms` });
   res.status(503).json({ status: 'error', model: MODEL, ollama: 'unreachable', lastChecked: ollamaLastChecked });
@@ -1055,7 +925,6 @@ app.post('/score', async (req, res) => {
 
   const { id, name, status } = journey;
   const daysStale = journey._daysStale || 0;
-
   log('info', '🎯 Scoring journey', { id, name: (name || '').slice(0, 40), status, days_stale: daysStale });
 
   const scoreStart = Date.now();
@@ -1064,43 +933,21 @@ app.post('/score', async (req, res) => {
     const prompt = buildPrompt(journey);
     const { text: rawText, promptTokens, completionTokens } = await callOllama(prompt, id);
     const parsed = extractJson(rawText, id);
-
     const totalMs = Date.now() - scoreStart;
 
-    // Write per-journey LLM log file
     writeLlmFile(journey, prompt, rawText, parsed, totalMs);
 
     if (!parsed) {
       log('error', '🎯 Score failed — non-JSON LLM response', { id, ms: `${totalMs}ms` });
-      return res.status(422).json({
-        error: 'LLM returned non-JSON response',
-        raw: rawText.slice(0, 500),
-        fallback: true,
-      });
+      return res.status(422).json({ error: 'LLM returned non-JSON response', raw: rawText.slice(0, 500), fallback: true });
     }
 
     log('info', '🎯 Score complete', {
-      id,
-      ms: `${totalMs}ms`,
-      verdict: parsed.retirementLabel,
-      score: parsed.retirementScore,
-      confidence: parsed.confidence,
-      biz_value: parsed.businessValue,
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
+      id, ms: `${totalMs}ms`, verdict: parsed.retirementLabel, score: parsed.retirementScore,
+      confidence: parsed.confidence, biz_value: parsed.businessValue,
+      prompt_tokens: promptTokens, completion_tokens: completionTokens,
     });
-    // Log full parsed LLM result at debug level
-    log('debug', '🎯 Parsed LLM result', {
-      id,
-      businessValue: parsed.businessValue,
-      hasBusinessPurpose: parsed.hasBusinessPurpose,
-      businessPurpose: parsed.businessPurpose,
-      retirementScore: parsed.retirementScore,
-      retirementLabel: parsed.retirementLabel,
-      confidence: parsed.confidence,
-      reasoning: parsed.reasoning,
-      recommendation: parsed.recommendation,
-    });
+    log('debug', '🎯 Parsed LLM result', { id, ...parsed });
 
     res.json({
       journeyId: id,
@@ -1112,15 +959,8 @@ app.post('/score', async (req, res) => {
   } catch (e) {
     const totalMs = Date.now() - scoreStart;
     const timedOut = e.name === 'AbortError';
-    log('error', `🎯 Score ${timedOut ? 'timed out' : 'errored'}`, {
-      id,
-      ms: `${totalMs}ms`,
-      error: e.message,
-    });
-    res.status(timedOut ? 504 : 500).json({
-      error: timedOut ? 'LLM request timed out' : e.message,
-      journeyId: id,
-    });
+    log('error', `🎯 Score ${timedOut ? 'timed out' : 'errored'}`, { id, ms: `${totalMs}ms`, error: e.message });
+    res.status(timedOut ? 504 : 500).json({ error: timedOut ? 'LLM request timed out' : e.message, journeyId: id });
   } finally {
     releaseSlot(id);
   }
@@ -1143,7 +983,7 @@ app.post('/score/batch', async (req, res) => {
     return res.status(400).json({ error: 'Missing journeys array' });
   }
 
-  const batch = journeys.slice(0, 10);
+  const batch      = journeys.slice(0, 10);
   const batchStart = Date.now();
   log('info', '📦 Batch scoring started', { count: batch.length, ids: batch.map((j) => j.id).join(',') });
 
@@ -1153,30 +993,21 @@ app.post('/score/batch', async (req, res) => {
     const { id, name, status } = journey;
     const itemStart = Date.now();
 
-    log('info', `📦 Batch [${i + 1}/${batch.length}]`, {
-      id,
-      name: (name || '').slice(0, 35),
-      status,
-    });
+    log('info', `📦 Batch [${i + 1}/${batch.length}]`, { id, name: (name || '').slice(0, 35), status });
 
     await acquireSlot(id);
     try {
       const prompt = buildPrompt(journey);
       const { text: rawText, promptTokens, completionTokens } = await callOllama(prompt, id);
-      const parsed = extractJson(rawText, id);
-      const itemMs = Date.now() - itemStart;
+      const parsed  = extractJson(rawText, id);
+      const itemMs  = Date.now() - itemStart;
 
-      // Write per-journey LLM log file
       writeLlmFile(journey, prompt, rawText, parsed, itemMs);
 
       if (parsed) {
         log('info', `📦 Batch [${i + 1}/${batch.length}] done`, {
-          id,
-          ms: `${itemMs}ms`,
-          score: parsed.retirementScore,
-          verdict: parsed.retirementLabel,
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
+          id, ms: `${itemMs}ms`, score: parsed.retirementScore, verdict: parsed.retirementLabel,
+          prompt_tokens: promptTokens, completion_tokens: completionTokens,
         });
       } else {
         log('warn', `📦 Batch [${i + 1}/${batch.length}] parse failed`, { id, ms: `${itemMs}ms` });
@@ -1198,23 +1029,19 @@ app.post('/score/batch', async (req, res) => {
   }
 
   const totalMs = Date.now() - batchStart;
-  const ok = results.filter((r) => !r.error).length;
-  const failed = results.length - ok;
+  const ok      = results.filter((r) => !r.error).length;
   log('info', '📦 Batch complete', {
-    total: batch.length,
-    ok,
-    failed,
-    ms: `${totalMs}ms`,
-    avg_ms: `${Math.round(totalMs / batch.length)}ms`,
+    total: batch.length, ok, failed: results.length - ok,
+    ms: `${totalMs}ms`, avg_ms: `${Math.round(totalMs / batch.length)}ms`,
   });
 
   res.json({ results });
 });
 
-// ── /stats  (session token usage) ────────────────────────────────────────────
+// ── /stats ────────────────────────────────────────────────────────────────────
 app.get('/stats', (_req, res) => {
   const uptime = Math.round((Date.now() - new Date(tokenStats.startedAt).getTime()) / 1000);
-  const stats = {
+  const stats  = {
     ...tokenStats,
     totalTokens: tokenStats.totalPromptTokens + tokenStats.totalCompletionTokens,
     uptimeSeconds: uptime,
@@ -1229,10 +1056,10 @@ app.get('/stats', (_req, res) => {
   res.json(stats);
 });
 
-// ── /stats/reset  (clear session counters) ───────────────────────────────────
+// ── /stats/reset ──────────────────────────────────────────────────────────────
 app.post('/stats/reset', (_req, res) => {
-  tokenStats.totalRequests = 0;
-  tokenStats.totalPromptTokens = 0;
+  tokenStats.totalRequests         = 0;
+  tokenStats.totalPromptTokens     = 0;
   tokenStats.totalCompletionTokens = 0;
   tokenStats.startedAt = new Date().toISOString();
   log('info', '📊 Stats reset');
@@ -1256,11 +1083,11 @@ app.use((err, req, res, _next) => {
 app.listen(PORT, () => {
   console.log('');
   console.log('\x1b[1m\x1b[35m🤖  AJO AI Proxy  started\x1b[0m');
-  console.log('─'.repeat(48));
+  console.log('-'.repeat(48));
   log('info', 'Server listening', { port: PORT, url: `http://localhost:${PORT}` });
-  log('info', 'Ollama backend', { url: OLLAMA_BASE, model: MODEL });
-  log('info', 'Queue settings', { concurrency: LLM_CONCURRENCY, timeout_ms: REQUEST_TIMEOUT_MS });
-  if (LOG_FILE) log('info', 'Log file', { path: path.resolve(LOG_FILE) });
+  log('info', 'Ollama backend',   { url: OLLAMA_BASE, model: MODEL });
+  log('info', 'Queue settings',   { concurrency: LLM_CONCURRENCY, timeout_ms: REQUEST_TIMEOUT_MS });
+  if (LOG_FILE)    log('info', 'Log file',    { path: path.resolve(LOG_FILE) });
   if (LLM_LOG_DIR) log('info', 'LLM log dir', { path: LLM_LOG_DIR });
   console.log('');
   console.log('\x1b[2mEndpoints:\x1b[0m');
