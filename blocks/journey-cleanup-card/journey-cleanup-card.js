@@ -336,10 +336,25 @@ function showJourneyIdLookup(root, cfg) {
       submitBtn.textContent = '\uD83D\uDD0D Analyze';
       resultEl.style.display = 'none';
       errEl.style.display = 'flex';
+      const isAuthErr = e.message.includes('401') || e.message.includes('403');
       const hint = e.message.includes('404') ? `Journey not found in sandbox \u201C${cfg.sandbox}\u201D \u2014 verify the ID and sandbox.`
-        : e.message.includes('401') || e.message.includes('403') ? 'Authentication failed \u2014 your token may have expired.'
+        : isAuthErr ? 'Authentication failed \u2014 your token may have expired.'
           : `API error: ${e.message}`;
-      errEl.textContent = `\u274C ${hint}`;
+      if (isAuthErr) {
+        errEl.style.display = 'flex';
+        errEl.innerHTML = `<span class="jcc-idl-err-msg">\u274C ${esc(hint)}</span>`
+          + `<button class="jcc-btn-update-token" id="jcc-idl-update-token">\uD83D\uDD11 Update Access Token</button>`;
+        errEl.querySelector('#jcc-idl-update-token').addEventListener('click', () => {
+          showModal((nc) => {
+            // Update the local cfg reference and re-render lookup page with new credentials
+            Object.assign(cfg, nc);
+            showJourneyIdLookup(root, nc);
+          });
+        });
+      } else {
+        errEl.style.display = 'flex';
+        errEl.textContent = `\u274C ${hint}`;
+      }
       return;
     }
 

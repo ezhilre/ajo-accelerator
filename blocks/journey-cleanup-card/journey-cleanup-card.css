@@ -2154,6 +2154,36 @@ a.jcc-go-btn:active,
   font-size: 0.875rem;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.jcc-idl-err-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+.jcc-btn-update-token {
+  flex-shrink: 0;
+  background: #c9252d;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, box-shadow 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.jcc-btn-update-token:hover {
+  background: #a1141b;
+  box-shadow: 0 2px 8px rgba(201, 37, 45, 0.35);
 }
 
 .jcc-idl-loading {
