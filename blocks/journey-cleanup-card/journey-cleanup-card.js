@@ -1304,30 +1304,38 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     // If AI is already running or fetch is done, recompute targets and add live journeys
     if (includeLive && all.length > 0) {
       const co = cutoff();
-      if (includeLive) {
-        const liveTargets = all.filter((j) => {
-          if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
-          const s = (j.status || '').toLowerCase();
-          return (s === 'live' || s === 'deployed') && !(aiScores.get(j.id)?.llm);
-        });
-        if (liveTargets.length > 0) {
-          // Apply rule scores first
-          applyRuleScores(liveTargets);
-          if (aiEnabled) {
-            if (aiRunning && agentPool) {
-              // Already running — enqueue live journeys into existing pool
-              // Update total displayed in progress by adding to pendingAiTargets
-              pendingAiTargets = [...pendingAiTargets, ...liveTargets];
-              agentPool.enqueue(liveTargets);
-              aiPl.textContent = `\uD83E\uDD16 LLM: added ${liveTargets.length} live journeys \u2014 now ${pendingAiTargets.length} total\u2026`;
-            } else if (!aiRunning && !loading) {
-              // Fetch is done, AI completed — start a new AI run for live journeys
-              aiPl.textContent = `\uD83E\uDD16 Starting LLM on ${liveTargets.length} live journeys\u2026`;
-              startAI(liveTargets);
+      const liveTargets = all.filter((j) => {
+        if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
+        const s = (j.status || '').toLowerCase();
+        return (s === 'live' || s === 'deployed') && !(aiScores.get(j.id)?.llm);
+      });
+      if (liveTargets.length > 0) {
+        // Apply rule scores first
+        applyRuleScores(liveTargets);
+        if (aiEnabled) {
+          if (aiRunning && agentPool) {
+            // Already running — enqueue live journeys into existing pool
+            pendingAiTargets = [...pendingAiTargets, ...liveTargets];
+            agentPool.enqueue(liveTargets);
+            aiPl.textContent = `\uD83E\uDD16 LLM: added ${liveTargets.length} live journeys \u2014 now ${pendingAiTargets.length} total\u2026`;
+          } else if (!aiRunning && !loading) {
+            // Fetch is done, AI completed — collect ALL unscored journeys (draft + live)
+            // so the progress counter reflects the true combined total
+            const allUnscoredTargets = all.filter((j) => {
+              if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
+              const s = (j.status || '').toLowerCase();
+              const alreadyScored = !!(aiScores.get(j.id)?.llm && !aiScores.get(j.id)?.llm.error);
+              if (alreadyScored) return false;
+              return s === 'draft' || s === 'live' || s === 'deployed';
+            });
+            if (allUnscoredTargets.length > 0) {
+              applyRuleScores(allUnscoredTargets);
+              aiPl.textContent = `\uD83E\uDD16 Starting LLM on ${allUnscoredTargets.length} journeys (draft + live)\u2026`;
+              startAI(allUnscoredTargets);
             }
           }
-          applyF();
         }
+        applyF();
       }
     }
   });
