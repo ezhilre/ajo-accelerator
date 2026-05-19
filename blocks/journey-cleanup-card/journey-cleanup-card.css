@@ -1713,6 +1713,105 @@ a.jcc-go-btn:active,
   word-break: break-word;
 }
 
+/* ── Business Intent Block (new — inside expanded detail panel) ──────────── */
+
+.jcc-ai-intent-block {
+  background: linear-gradient(135deg, #f0f9f4 0%, #f0f4ff 100%);
+  border: 1px solid #a0dfc6;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.jcc-ai-intent-hdr {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #0d7055;
+  margin-bottom: 0.2rem;
+}
+
+.jcc-ai-intent-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.jcc-ai-intent-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.jcc-ai-intent-row:first-of-type { border-top: none; }
+
+.jcc-ai-intent-lbl {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e6e6e;
+  white-space: nowrap;
+}
+
+.jcc-ai-intent-val {
+  color: #2c2c2c;
+  line-height: 1.45;
+}
+
+/* "Why team built this" row — slightly highlighted */
+.jcc-ai-intent-why .jcc-ai-intent-val {
+  color: #1473e6;
+  font-style: italic;
+}
+
+/* Summary line shown after intent block */
+.jcc-ai-usecase-summary--intent {
+  font-size: 0.82rem;
+  color: #4b4b4b;
+  background: #f5f5f5;
+  border-left: 3px solid #1473e6;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Lifecycle stage badges ───────────────────────────────────────────────── */
+
+.jcc-lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: default;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.jcc-lifecycle-acquisition  { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+.jcc-lifecycle-onboard      { background: #e8eaf6; color: #283593; border-color: #9fa8da; }
+.jcc-lifecycle-activation   { background: #fff8e1; color: #e65100; border-color: #ffe082; }
+.jcc-lifecycle-retention    { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
+.jcc-lifecycle-reengage     { background: #f3e5f5; color: #6a1b9a; border-color: #ce93d8; }
+.jcc-lifecycle-monetize     { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.jcc-lifecycle-postpurchase { background: #e3f2fd; color: #0277bd; border-color: #81d4fa; }
+.jcc-lifecycle-loyalty      { background: #fff3e0; color: #bf360c; border-color: #ffcc80; }
+.jcc-lifecycle-unknown      { background: #fafafa; color: #757575; border-color: #e0e0e0; }
+
 /* ── Use Case section inside expanded detail panel ───────────────────────── */
 
 .jcc-ai-usecase {

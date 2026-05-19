@@ -185,6 +185,27 @@ const JOURNEY_TYPE_META = {
   'Unknown':        { icon: '❓', mod: 'unknown' },
 };
 
+// Lifecycle stage → icon + CSS modifier
+const LIFECYCLE_STAGE_META = {
+  'Acquisition':   { icon: '🎯', mod: 'acquisition' },
+  'Onboarding':    { icon: '🚀', mod: 'onboard' },
+  'Activation':    { icon: '⚡', mod: 'activation' },
+  'Retention':     { icon: '🤝', mod: 'retention' },
+  'Re-engagement': { icon: '🔄', mod: 'reengage' },
+  'Monetization':  { icon: '💰', mod: 'monetize' },
+  'Post-purchase': { icon: '📦', mod: 'postpurchase' },
+  'Loyalty':       { icon: '⭐', mod: 'loyalty' },
+  'Unknown':       { icon: '❓', mod: 'unknown' },
+};
+
+function lifecycleStageBadgeHtml(stage) {
+  if (!stage) return '';
+  // Normalise compound stages like "Onboarding / First activation" → first word
+  const key = Object.keys(LIFECYCLE_STAGE_META).find((k) => stage.startsWith(k)) || 'Unknown';
+  const meta = LIFECYCLE_STAGE_META[key] || { icon: '📍', mod: 'unknown' };
+  return `<span class="jcc-lifecycle-badge jcc-lifecycle-${escAI(meta.mod)}" title="${escAI(stage)}">${meta.icon} ${escAI(stage)}</span>`;
+}
+
 export function journeyTypeBadgeHtml(llm) {
   if (!llm || !llm.journeyType) return '';
   const t = llm.journeyType;
@@ -223,8 +244,40 @@ export function aiDetailHtml(rule, llm) {
     const fs = Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6);
     html += '<div class="jcc-ai-llm-panel">';
 
-    // ── Journey use case summary ──────────────────────────────────────────
-    if (llm.journeyType || llm.useCaseSummary || llm.targetAudience) {
+    // ── Business Intent Block (new) ───────────────────────────────────────
+    const hasIntent = llm.lifecycleStage || llm.customerExperience || llm.behaviorTargeted
+      || llm.businessObjective || llm.whyTeamBuiltThis;
+
+    if (hasIntent) {
+      html += '<div class="jcc-ai-intent-block">';
+      html += '<div class="jcc-ai-intent-hdr">🎯 Business Intent</div>';
+
+      // Lifecycle stage + journey type badges on same row
+      if (llm.lifecycleStage || llm.journeyType) {
+        html += '<div class="jcc-ai-intent-badges">';
+        if (llm.lifecycleStage) html += lifecycleStageBadgeHtml(llm.lifecycleStage);
+        if (llm.journeyType) {
+          const meta = JOURNEY_TYPE_META[llm.journeyType] || { icon: '📋', mod: 'unknown' };
+          html += `<span class="jcc-jtype-badge jcc-jtype-${escAI(meta.mod)}" title="${escAI(llm.useCaseSummary || llm.journeyType)}">${meta.icon} ${escAI(llm.journeyType)}</span>`;
+        }
+        html += '</div>';
+      }
+
+      if (llm.customerExperience) {
+        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Customer experience</span><span class="jcc-ai-intent-val">${escAI(llm.customerExperience)}</span></div>`;
+      }
+      if (llm.behaviorTargeted) {
+        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Behavior targeted</span><span class="jcc-ai-intent-val">${escAI(llm.behaviorTargeted)}</span></div>`;
+      }
+      if (llm.businessObjective) {
+        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Business objective</span><span class="jcc-ai-intent-val">${escAI(llm.businessObjective)}</span></div>`;
+      }
+      if (llm.whyTeamBuiltThis) {
+        html += `<div class="jcc-ai-intent-row jcc-ai-intent-why"><span class="jcc-ai-intent-lbl">Why team built this</span><span class="jcc-ai-intent-val">${escAI(llm.whyTeamBuiltThis)}</span></div>`;
+      }
+      html += '</div>';
+    } else if (llm.journeyType || llm.useCaseSummary || llm.targetAudience) {
+      // Fallback: old-style use case block if new intent fields absent
       html += '<div class="jcc-ai-usecase">';
       if (llm.journeyType) {
         const meta = JOURNEY_TYPE_META[llm.journeyType] || { icon: '📋', mod: 'unknown' };
@@ -237,6 +290,14 @@ export function aiDetailHtml(rule, llm) {
         html += `<div class="jcc-ai-usecase-audience"><span class="jcc-ai-usecase-lbl">Target audience:</span> ${escAI(llm.targetAudience)}</div>`;
       }
       html += '</div>';
+    }
+
+    // ── Use case summary (always shown when present) ───────────────────────
+    if (llm.useCaseSummary && hasIntent) {
+      html += `<div class="jcc-ai-usecase-summary jcc-ai-usecase-summary--intent"><span class="jcc-ai-usecase-lbl">Summary:</span> ${escAI(llm.useCaseSummary)}</div>`;
+    }
+    if (llm.targetAudience && hasIntent) {
+      html += `<div class="jcc-ai-usecase-audience"><span class="jcc-ai-usecase-lbl">Target audience:</span> ${escAI(llm.targetAudience)}</div>`;
     }
 
     html += `<div class="jcc-ai-llm-row">`;

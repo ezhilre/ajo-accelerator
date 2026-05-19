@@ -81,16 +81,21 @@ function writeLlmFile(journey, prompt, raw, parsed, durationMs) {
 
     if (parsed) {
       const fields = [
-        ['retirementScore',  parsed.retirementScore],
-        ['retirementLabel',  parsed.retirementLabel],
-        ['confidence',       parsed.confidence],
-        ['businessValue',    parsed.businessValue],
-        ['journeyType',      parsed.journeyType],
-        ['useCaseSummary',   parsed.useCaseSummary],
-        ['targetAudience',   parsed.targetAudience],
-        ['businessPurpose',  parsed.businessPurpose],
-        ['reasoning',        parsed.reasoning],
-        ['recommendation',   parsed.recommendation],
+        ['retirementScore',   parsed.retirementScore],
+        ['retirementLabel',   parsed.retirementLabel],
+        ['confidence',        parsed.confidence],
+        ['businessValue',     parsed.businessValue],
+        ['journeyType',       parsed.journeyType],
+        ['lifecycleStage',    parsed.lifecycleStage],
+        ['customerExperience',parsed.customerExperience],
+        ['behaviorTargeted',  parsed.behaviorTargeted],
+        ['businessObjective', parsed.businessObjective],
+        ['whyTeamBuiltThis',  parsed.whyTeamBuiltThis],
+        ['useCaseSummary',    parsed.useCaseSummary],
+        ['targetAudience',    parsed.targetAudience],
+        ['businessPurpose',   parsed.businessPurpose],
+        ['reasoning',         parsed.reasoning],
+        ['recommendation',    parsed.recommendation],
       ];
       fields.forEach(([k, v]) => {
         if (v !== undefined && v !== null) lines.push(`  ${k.padEnd(20)}: ${v}`);
@@ -536,6 +541,12 @@ function buildFlowPath(journey) {
   }
 
   // DFS to build human-readable flow text
+  // Uses a path-local ancestor set (not a global visited set) so that:
+  //   - TRUE cycles  → detected when nodeId is on the current branch path
+  //   - SHARED CONVERGENCE (e.g., both branches → same Wait → End) → rendered correctly
+  // A global renderedCache stores the text of already-fully-rendered subtrees so
+  // convergent branches can emit a short "-> same as: X" reference instead of
+  // re-rendering the full subtree (keeps output clean but complete).
   function nodeLabel(nd) {
     const type = (nd.type || nd.nodeType || nd.actionType || '').toLowerCase();
     const nm   = nd.name || nd.label || '';
@@ -565,10 +576,16 @@ function buildFlowPath(journey) {
     return nm ? `${type}: ${nm}` : type || 'Unknown Node';
   }
 
-  const dfsVisited = new Set();
-  function walk(nodeId, depth, branchLabel) {
-    if (depth > 15 || dfsVisited.has(nodeId)) return ['...(cycle or depth limit)'];
-    dfsVisited.add(nodeId);
+  // renderedCache: nodeId → first-render label (used to emit short-form references on convergence)
+  const renderedCache = new Map();
+
+  // pathAncestors: Set of nodeIds on the CURRENT DFS branch (detects true back-edges / cycles)
+  function walk(nodeId, depth, branchLabel, pathAncestors) {
+    if (depth > 20) return ['...(depth limit)'];
+
+    // TRUE cycle: this node is an ancestor on the current branch path
+    if (pathAncestors.has(nodeId)) return ['...(loop back)'];
+
     const nd = nodeMap.get(nodeId);
     if (!nd) return [];
 
@@ -577,25 +594,37 @@ function buildFlowPath(journey) {
     const indent = '   '.repeat(depth);
     const prefix = depth === 0 ? '' : (branchLabel ? `[${branchLabel}] ` : '-> ');
     const label  = isEnd ? 'End' : nodeLabel(nd);
-    const lines  = [`${indent}${prefix}${label}`];
 
+    // CONVERGENCE: node already fully rendered by a different branch — emit short reference
+    if (!isEnd && renderedCache.has(nodeId)) {
+      return [`${indent}${prefix}-> (converges to: ${renderedCache.get(nodeId)})`];
+    }
+
+    // Mark as rendered so other branches see the short-form reference
+    renderedCache.set(nodeId, label);
+
+    const lines = [`${indent}${prefix}${label}`];
     if (isEnd) return lines;
+
+    // Extend path-local ancestor set for children (immutable per branch)
+    const childAncestors = new Set(pathAncestors);
+    childAncestors.add(nodeId);
 
     const transitions = Array.isArray(nd.transitions) ? nd.transitions : [];
     if (COND_TYPES.test(type) && transitions.length > 1) {
       transitions.forEach((t) => {
         const branchName = t.name || t.label || t.type || 'branch';
         const nextId = t.nextNodeId || t.targetNodeId || t.id;
-        if (nextId && !dfsVisited.has(nextId)) {
-          lines.push(...walk(nextId, depth + 1, branchName));
-        } else if (!nextId) {
+        if (nextId) {
+          lines.push(...walk(nextId, depth + 1, branchName, childAncestors));
+        } else {
           lines.push(`${'   '.repeat(depth + 1)}[${branchName}] -> End`);
         }
       });
     } else if (transitions.length === 1) {
       const nextId = transitions[0].nextNodeId || transitions[0].targetNodeId;
       if (nextId) {
-        const sub = walk(nextId, depth, null);
+        const sub = walk(nextId, depth, null, childAncestors);
         if (sub.length === 1) {
           lines[lines.length - 1] += ` -> ${sub[0].trimStart()}`;
         } else {
@@ -604,14 +633,14 @@ function buildFlowPath(journey) {
       }
     } else if (!transitions.length) {
       const nextId = nd.nextNodeId || nd.targetNodeId;
-      if (nextId && !dfsVisited.has(nextId)) lines.push(...walk(nextId, depth, null));
+      if (nextId) lines.push(...walk(nextId, depth, null, childAncestors));
     }
 
     return lines;
   }
 
   try {
-    const flowText = walk(startId, 0, null).join('\n');
+    const flowText = walk(startId, 0, null, new Set()).join('\n');
     return { flowText, maxDepth };
   } catch (_) {
     return { flowText: null, maxDepth };
@@ -724,6 +753,181 @@ function buildOperationalSignals(meta, sched, exitArr, status) {
   function yn(v) { return v ? 'YES' : 'no'; }
 }
 
+// ── Journey Intent Layer ──────────────────────────────────────────────────────
+// Derives high-level semantic business signals from raw orchestration topology.
+// Runs BEFORE the LLM call so the model reasons about business intent top-down
+// rather than narrating graph structure bottom-up.
+//
+// Signal categories derived:
+//   lifecycleStage    — where in the customer journey this sits
+//   primaryIntent     — the core behavior being influenced
+//   segmentationType  — what type of split logic is present
+//   engagementChannel — what channel(s) are used and why
+//   timingStrategy    — what the wait/timer pattern implies
+//   customerProblem   — the underlying user need being addressed
+//   behaviorTargeted  — the specific action/event being influenced
+function deriveIntentLayer(name, actions, conditions, audienceNames, channelCounts, flowText, triggerInfo) {
+  const n = (name || '').toLowerCase();
+  const conditionLabels = conditions.map((c) => (c.name || '').toLowerCase()).join(' ');
+  const actionLabels    = actions.map((a) => (a.name || '').toLowerCase()).join(' ');
+  const flowLower       = (flowText || '').toLowerCase();
+  const allText         = `${n} ${conditionLabels} ${actionLabels} ${flowLower}`;
+
+  const { emailCount = 0, smsCount = 0, pushCount = 0, inAppCount = 0,
+    contentCardCount = 0, timerCount = 0 } = channelCounts;
+
+  const signals = {};
+
+  // ── Lifecycle stage ──────────────────────────────────────────────────────
+  if (/first.?app|first.?launch|first.?open|signup|sign.?up|register|creat.*account/i.test(allText)) {
+    signals.lifecycleStage = 'Onboarding / First activation';
+  } else if (/onboard/i.test(allText)) {
+    signals.lifecycleStage = 'Onboarding';
+  } else if (/welcome/i.test(allText)) {
+    signals.lifecycleStage = 'Acquisition / Welcome';
+  } else if (/abandon/i.test(allText)) {
+    signals.lifecycleStage = 'Conversion / Cart recovery';
+  } else if (/re.?engag|win.?back|laps|reactivat|dormant|inactive/i.test(allText)) {
+    signals.lifecycleStage = 'Re-engagement / Win-back';
+  } else if (/churn|retention|renew|cancel/i.test(allText)) {
+    signals.lifecycleStage = 'Retention / Churn prevention';
+  } else if (/upsell|upgrade|premium|paid|credit|subscri/i.test(allText)) {
+    signals.lifecycleStage = 'Monetization / Upsell';
+  } else if (/transact|receipt|confirm|order|ship|deliver/i.test(allText)) {
+    signals.lifecycleStage = 'Post-purchase / Transactional';
+  } else if (/loyalt|reward|point|vip/i.test(allText)) {
+    signals.lifecycleStage = 'Loyalty / Advocacy';
+  } else if (conditions.length >= 2 && (emailCount + inAppCount + pushCount) > 0) {
+    signals.lifecycleStage = 'Engagement / Nurture';
+  } else {
+    signals.lifecycleStage = null; // let LLM infer
+  }
+
+  // ── Primary intent ────────────────────────────────────────────────────────
+  if (/upsell|upgrade|premium|paid.*user|free.*user|credit|modal/i.test(allText)) {
+    signals.primaryIntent = 'Drive conversion from free to paid / trigger upsell';
+  } else if (/abandon/i.test(allText)) {
+    signals.primaryIntent = 'Recover abandoned intent and complete transaction';
+  } else if (/re.?engag|win.?back|laps|reactivat/i.test(allText)) {
+    signals.primaryIntent = 'Re-activate dormant users and restore engagement';
+  } else if (/onboard|first.?app|first.?launch|first.?open/i.test(allText)) {
+    signals.primaryIntent = 'Guide new users through activation milestones';
+  } else if (/welcome/i.test(allText)) {
+    signals.primaryIntent = 'Welcome and orient new users into the product experience';
+  } else if (/retention|churn|renew/i.test(allText)) {
+    signals.primaryIntent = 'Prevent churn by reinforcing product value';
+  } else if (/transact|confirm|receipt|order/i.test(allText)) {
+    signals.primaryIntent = 'Fulfill transactional communication obligation post-event';
+  } else if (conditions.length > 0 && inAppCount > 0) {
+    signals.primaryIntent = 'Personalize in-app experience based on user segment';
+  } else if (emailCount > 1) {
+    signals.primaryIntent = 'Nurture users through a multi-touch email sequence';
+  } else {
+    signals.primaryIntent = null;
+  }
+
+  // ── Segmentation type ────────────────────────────────────────────────────
+  const hasFreeVsPaid = /free.*paid|paid.*free|subscri|premium.*free|free.*premium/i.test(allText)
+    || audienceNames.some((a) => /free|paid|subscri|premium/i.test(a));
+  const hasNewVsExisting = /new.*user|existing|return|loyal/i.test(allText)
+    || audienceNames.some((a) => /new|existing|return|loyal/i.test(a));
+  const hasBehavioral = /clicked|opened|visited|purchased|trigger|event/i.test(allText);
+
+  if (hasFreeVsPaid) {
+    signals.segmentationType = 'Subscription-state split (Free vs Paid users)';
+  } else if (hasNewVsExisting) {
+    signals.segmentationType = 'Lifecycle-state split (New vs Existing users)';
+  } else if (hasBehavioral) {
+    signals.segmentationType = 'Behavioral split (action/event-based branching)';
+  } else if (audienceNames.length > 0) {
+    signals.segmentationType = `Named audience split: ${audienceNames.slice(0, 3).join(', ')}`;
+  } else if (conditions.length > 0) {
+    signals.segmentationType = 'Conditional branching (criteria not yet labeled)';
+  } else {
+    signals.segmentationType = null;
+  }
+
+  // ── Engagement channel signal ─────────────────────────────────────────────
+  const channels = [];
+  if (inAppCount > 0)       channels.push(`in-app message${inAppCount > 1 ? 's' : ''} (real-time contextual)`);
+  if (emailCount > 0)       channels.push(`email${emailCount > 1 ? ` (${emailCount}-touch sequence)` : ''}`);
+  if (pushCount > 0)        channels.push('push notification (interrupt-driven)');
+  if (smsCount > 0)         channels.push('SMS (high-urgency or transactional)');
+  if (contentCardCount > 0) channels.push('content card (passive in-app surface)');
+  signals.engagementChannel = channels.length ? channels.join(' + ') : null;
+
+  // ── Timing strategy ───────────────────────────────────────────────────────
+  // Infer wait semantics from flow text (duration values) or action types
+  const waitMatches = (flowText || '').matchAll(/wait[:\s]+(\d+)\s*(day|hour|minute|week|month)/gi);
+  const waitDurations = [...waitMatches].map((m) => `${m[1]} ${m[2]}`);
+  const hasTimer = timerCount > 0 || /\btimer\b|\bwait\b/i.test(flowLower);
+
+  if (waitDurations.length) {
+    const dur = waitDurations[0];
+    const days = parseInt(dur, 10);
+    if (/month/i.test(dur) || days >= 21) {
+      signals.timingStrategy = `Long-cycle nurture (${waitDurations.join(', ')}) — retention or re-engagement pacing`;
+    } else if (days >= 7) {
+      signals.timingStrategy = `Medium-term follow-up (${waitDurations.join(', ')}) — post-event engagement window`;
+    } else {
+      signals.timingStrategy = `Short-term trigger response (${waitDurations.join(', ')}) — immediate post-action nurture`;
+    }
+  } else if (hasTimer) {
+    signals.timingStrategy = 'Timed delay present — cadence-controlled messaging sequence';
+  } else if (triggerInfo && /unitary|event-triggered/i.test(triggerInfo)) {
+    signals.timingStrategy = 'Real-time event-triggered — immediate response to user action';
+  } else {
+    signals.timingStrategy = null;
+  }
+
+  // ── Customer problem being solved ─────────────────────────────────────────
+  if (/free.*user|free.*paid|upsell|upgrade|credit|modal/i.test(allText)) {
+    signals.customerProblem = 'Users signed up but have not discovered or converted to paid features';
+  } else if (/abandon/i.test(allText)) {
+    signals.customerProblem = 'Users expressed purchase intent but did not complete the transaction';
+  } else if (/re.?engag|dormant|inactive|laps/i.test(allText)) {
+    signals.customerProblem = 'Previously active users have disengaged and risk churning';
+  } else if (/onboard|first.?app|first.?launch/i.test(allText)) {
+    signals.customerProblem = 'New users need guided activation to realize product value';
+  } else if (/churn|cancel|retention/i.test(allText)) {
+    signals.customerProblem = 'At-risk users showing signals of intent to leave or cancel';
+  } else if (/welcome/i.test(allText)) {
+    signals.customerProblem = 'New users need orientation and a first connection to the product';
+  } else {
+    signals.customerProblem = null;
+  }
+
+  // ── Behavioral target ──────────────────────────────────────────────────────
+  if (/upsell|upgrade|paid|credit/i.test(allText)) {
+    signals.behaviorTargeted = 'First subscription purchase or plan upgrade';
+  } else if (/abandon/i.test(allText)) {
+    signals.behaviorTargeted = 'Completion of previously abandoned purchase or sign-up flow';
+  } else if (/first.?app|first.?launch|activate|onboard/i.test(allText)) {
+    signals.behaviorTargeted = 'First key action or feature activation in the app';
+  } else if (/re.?engag|return|come.?back/i.test(allText)) {
+    signals.behaviorTargeted = 'Return session or re-engagement with core product feature';
+  } else if (/open.*email|click|visit/i.test(allText)) {
+    signals.behaviorTargeted = 'Email engagement or site/app visit';
+  } else {
+    signals.behaviorTargeted = null;
+  }
+
+  // ── Format as structured block ────────────────────────────────────────────
+  const entries = [
+    ['Lifecycle stage',      signals.lifecycleStage],
+    ['Primary intent',       signals.primaryIntent],
+    ['Segmentation type',    signals.segmentationType],
+    ['Engagement channel',   signals.engagementChannel],
+    ['Timing strategy',      signals.timingStrategy],
+    ['Customer problem',     signals.customerProblem],
+    ['Behavioral target',    signals.behaviorTargeted],
+  ].filter(([, v]) => v);
+
+  if (!entries.length) return null;
+
+  return entries.map(([k, v]) => `- ${k.padEnd(22)}: ${v}`).join('\n');
+}
+
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(journey) {
   const meta     = journey.metadata || {};
@@ -827,19 +1031,32 @@ function buildPrompt(journey) {
     ? 'WARNING: No structural node data from API — rely on name, status, tags, and description.'
     : '';
 
-  return `You are an Adobe Journey Optimizer governance expert. Analyze this journey and return a JSON verdict.
+  // Business Intent Layer — derived semantic signals injected before LLM reasoning
+  const intentLayer = deriveIntentLayer(
+    name, actions, conditions, audienceNames, channelCounts, flowText, triggerInfo,
+  );
 
-CLASSIFICATION RULES (follow in priority order):
-1. STRUCTURE IS PRIMARY. Flow path, audience logic, conditions, and message actions reveal intent.
-2. Draft = unpublished, not abandoned. A draft with entry logic + conditions + message actions has real purpose.
-3. Staleness affects retirement priority only — not business purpose.
-4. Name tokens (Delete/Test/Old/v2/copy) are WEAK signals — cannot override structural evidence.
-5. If journey has >=1 entry event AND >=1 condition AND >=1 message action → businessPurpose must describe the workflow.
+  return `You are a customer lifecycle strategist reviewing an Adobe Journey Optimizer workflow.
+Your job is NOT to describe the graph topology — it is to interpret the business intent behind it.
+A marketing or product team built this workflow deliberately. Your task is to articulate WHY.
+
+Ask yourself:
+  - What customer experience is this workflow trying to create?
+  - What specific user behavior is being influenced or triggered?
+  - What lifecycle stage does this journey target?
+  - What business outcome appears to be intended?
+  - Why would a marketing/product team build exactly this workflow?
+
+GOVERNANCE RULES (apply in priority order):
+1. INTENT IS PRIMARY. Interpret purpose from flow structure, audience names, condition names, and channel choices.
+2. Draft ≠ abandoned. A draft with entry logic + branching + message actions has deliberate business purpose.
+3. Staleness influences retirement urgency only — not whether the journey had a legitimate purpose.
+4. Name tokens (test/copy/old/v2) are WEAK signals and cannot override structural evidence of real intent.
+5. If journey has >=1 entry event AND >=1 condition AND >=1 message action → describe the real business intent.
    "No identifiable business purpose" is only valid when: AJO default name AND 0 message actions AND 0 conditions AND no description.
 6. Test/POC requires: placeholder name AND trivial structure (<=1 node, no audience logic, no messaging).
-7. If useCaseSummary describes a real workflow, businessPurpose must also describe a real purpose.
 
-JOURNEY DATA:
+JOURNEY IDENTITY:
 Name: "${name}"
 Status: ${status} | Version: ${version} | Days stale: ${daysStale}
 Execution type: ${journeyApiType || 'unknown'} (unitary=event-triggered; read_segment=audience-batch)
@@ -849,14 +1066,15 @@ Default AJO name (never renamed): ${isDefaultName}
 ${sandboxName ? `Sandbox: ${sandboxName}` : ''}${category ? ` | Category: ${category}` : ''}
 Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
 ${typeHintLine}
+${intentLayer ? `\nBUSINESS INTENT SIGNALS (pre-derived — use as context, override if flow contradicts):\n${intentLayer}` : ''}
 
-CONFIGURATION:
+CUSTOMER LIFECYCLE CONTEXT:
 Schedule: ${schedLine} | Re-entrance: ${reentLine} | Exit criteria: ${exitLine}
 
-JOURNEY FLOW (primary signal):
+JOURNEY FLOW (primary signal — read this to understand the customer experience being designed):
 ${flowText || structureNote || '(flow unavailable — no transitions in API response)'}
 
-JOURNEY STRUCTURE:
+WORKFLOW STRUCTURE:
 ${journeyStructure}
 ${structureNote && !flowText ? '\n' + structureNote : ''}
 
@@ -868,20 +1086,26 @@ Condition names: ${conditionNames.length ? conditionNames.join(' | ') : 'none'}
 TARGET AUDIENCE:
 ${audienceSummary}
 
-OPERATIONAL SIGNALS:
+OPERATIONAL STATE:
 ${operationalSignals}
 
-Analyze this journey. Return ONLY valid JSON — no markdown, no text outside the object:
+Return ONLY valid JSON — no markdown, no explanatory text outside the object.
+Answer each field from a business strategy lens, not a graph description lens:
 {
   "journeyType": "Welcome|Promotional|Transactional|Re-engagement|Abandoned Cart|Onboarding|Retention|Test/POC|Unknown",
-  "useCaseSummary": "What this journey does — inferred from flow, action names, conditions, and audience.",
-  "targetAudience": "Who it targets based on audience segments and conditions, or 'Unknown'",
+  "lifecycleStage": "Acquisition|Onboarding|Activation|Retention|Re-engagement|Monetization|Post-purchase|Loyalty|Unknown",
+  "customerExperience": "What experience is this workflow creating for the customer? (1 sentence, customer POV)",
+  "behaviorTargeted": "What specific user action or behavior is this workflow trying to trigger or influence?",
+  "businessObjective": "What measurable business outcome does this workflow appear designed to achieve?",
+  "whyTeamBuiltThis": "Why would a marketing/product team build exactly this workflow? (strategic reasoning)",
+  "useCaseSummary": "Concise description of what this journey does — synthesizing flow, channels, audience, and timing.",
+  "targetAudience": "Who it targets — inferred from audience segments, conditions, and entry qualification.",
   "businessValue": "low|medium|high",
-  "businessPurpose": "One sentence describing the business process, or 'No identifiable business purpose' only if rule 5 conditions are fully met",
+  "businessPurpose": "One sentence describing the strategic business process this journey serves.",
   "retirementScore": 0-100,
   "retirementLabel": "Safe to Retire|Review First|Keep Active",
   "confidence": 0-100,
-  "reasoning": "2-3 sentences citing specific signals: flow structure, audience names, condition names, action types, status, staleness.",
+  "reasoning": "2-3 sentences citing specific signals: lifecycle stage, audience segmentation, channel strategy, timing pattern, status, and staleness.",
   "recommendation": "Archive|Review with owner|Keep|Contact owner before deleting"
 }`;
 }
