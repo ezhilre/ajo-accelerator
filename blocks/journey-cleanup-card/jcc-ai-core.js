@@ -66,6 +66,24 @@ export async function fetchJourneyDetail(cfg, id) {
   return res.json();
 }
 
+export async function resolveAudiences(audiences, cfg, proxyUrl, timeoutMs = 30_000) {
+  if (!Array.isArray(audiences) || !audiences.length) return [];
+  if (!cfg || !cfg.token) return []; // no credentials — skip silently
+  try {
+    const res = await fetch(`${proxyUrl}/audience/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audiences, cfg }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return audiences; // fallback: return raw unresolved list
+    const { resolved } = await res.json();
+    return Array.isArray(resolved) ? resolved : audiences;
+  } catch (_) {
+    return audiences; // graceful fallback — scoring continues without audience enrichment
+  }
+}
+
 export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 90_000) {
   const enriched = {
     ...journey,
@@ -133,8 +151,24 @@ export function createAgentPool({
       detail = detailCache.has(j.id) ? detailCache.get(j.id) : await fetchJourneyDetail(cfg, j.id);
       detailCache.set(j.id, detail);
     } catch (_) { /* metadata only */ }
+
+    // Agent 1 — Audience Resolver
+    // Merge audiences from list + detail, resolve via proxy, inject plain-English descriptions.
+    const mergedJourney = detail ? { ...j, ...detail } : j;
+    const rawAudiences = mergedJourney.audiences || [];
+    let enrichedAudiences = rawAudiences;
+    if (rawAudiences.length && cfg) {
+      try {
+        enrichedAudiences = await resolveAudiences(rawAudiences, cfg, proxyUrl);
+      } catch (_) { /* graceful fallback — continue with raw names */ }
+    }
+
+    // Agent 2 — Journey Scorer (receives enriched audience context)
     try {
-      llm = await scoreSingleLLM(detail ? { ...j, ...detail } : j, proxyUrl);
+      llm = await scoreSingleLLM(
+        { ...mergedJourney, audiences: enrichedAudiences },
+        proxyUrl,
+      );
       consecutiveFails = 0; // reset on success
     } catch (e) {
       consecutiveFails += 1;
@@ -145,6 +179,12 @@ export function createAgentPool({
         proxyDownFired = true;
         onProxyDown(e.message);
       }
+    }
+    // Attach resolved audience info to LLM result for UI rendering
+    if (llm && !llm.error && enrichedAudiences && enrichedAudiences.length && enrichedAudiences[0].plainEnglish) {
+      llm._resolvedAudiences = enrichedAudiences.map((a) => ({
+        id: a.id, name: a.name, plainEnglish: a.plainEnglish, status: a.apiStatus,
+      }));
     }
     tally(rule, llm);
     done += 1;
