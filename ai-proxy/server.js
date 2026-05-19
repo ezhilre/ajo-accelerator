@@ -34,7 +34,8 @@ const {
 const { resolveJourneyAudiences }  = require('./agents/audience-agent');
 const { journeyGraph }             = require('./graph/journey-graph');
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT               = parseInt(process.env.PORT || '3001', 10);
+const SERVER_TIMEOUT_MS  = parseInt(process.env.REQUEST_TIMEOUT_MS || '300000', 10) + 30_000; // proxy timeout + 30s buffer
 
 // Extra CORS origins from env
 const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
@@ -378,13 +379,14 @@ app.use((err, req, res, _next) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
+  server.timeout = SERVER_TIMEOUT_MS; // prevent Node from closing long-running LLM sockets early
   console.log('');
   console.log('\x1b[1m\x1b[35m🤖  AJO AI Proxy  started\x1b[0m');
   console.log('-'.repeat(48));
   log('info', 'Server listening',  { port: PORT, url: `http://localhost:${PORT}` });
   log('info', 'Ollama backend',    { url: OLLAMA_BASE, model: MODEL });
-  log('info', 'Queue settings',    { concurrency: LLM_CONCURRENCY, timeout_ms: 60000 });
+  log('info', 'Queue settings',    { concurrency: LLM_CONCURRENCY, llm_timeout_ms: parseInt(process.env.REQUEST_TIMEOUT_MS || '300000', 10), server_timeout_ms: SERVER_TIMEOUT_MS });
   log('info', 'Adobe credentials', {
     token:    ADOBE_TOKEN    ? '✓ set' : '✗ missing',
     api_key:  ADOBE_API_KEY  ? '✓ set' : '✗ missing',

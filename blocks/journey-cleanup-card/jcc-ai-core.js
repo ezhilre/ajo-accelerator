@@ -66,7 +66,7 @@ export async function fetchJourneyDetail(cfg, id) {
   return res.json();
 }
 
-export async function resolveAudiences(audiences, cfg, proxyUrl, timeoutMs = 30_000) {
+export async function resolveAudiences(audiences, cfg, proxyUrl, timeoutMs = 60_000) {
   if (!Array.isArray(audiences) || !audiences.length) return [];
   if (!cfg || !cfg.token) return []; // no credentials — skip silently
   try {
@@ -84,7 +84,7 @@ export async function resolveAudiences(audiences, cfg, proxyUrl, timeoutMs = 30_
   }
 }
 
-export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 150_000) {
+export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 360_000) {
   const enriched = {
     ...journey,
     _daysStale: daysAgoAI(journey.metadata?.lastModifiedAt),
