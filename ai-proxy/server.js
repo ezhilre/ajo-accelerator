@@ -100,6 +100,56 @@ function enrichJourney(journey) {
   };
 }
 
+/**
+ * Extract all unique audiences from a journey object.
+ * Checks multiple locations where the AJO API places audience references:
+ *   1. journey.audiences[]            — top-level array (some API shapes)
+ *   2. canvas.nodes[].audiences[]     — node-level audiences array (audience_qualification nodes)
+ *   3. nodes[].audiences[]            — flat nodes array variant
+ *   4. journey.audienceId             — single top-level ID (legacy)
+ *   5. events[].audienceId / segmentId — event-node IDs
+ */
+function extractAllAudiences(journey) {
+  const map = new Map();
+
+  const addAudience = (a) => {
+    if (a && a.id) map.set(a.id, { id: a.id, name: a.name || '' });
+  };
+
+  // 1. Top-level audiences array
+  (Array.isArray(journey.audiences) ? journey.audiences : []).forEach(addAudience);
+
+  // 2 & 3. Canvas / flat nodes — scan all nodes for .audiences[] arrays
+  const rawNodes = [
+    ...(Array.isArray(journey.canvas?.nodes) ? journey.canvas.nodes : []),
+    ...(Array.isArray(journey.nodes) ? journey.nodes : []),
+    ...(journey.canvas?.nodes && typeof journey.canvas.nodes === 'object' && !Array.isArray(journey.canvas.nodes)
+      ? Object.values(journey.canvas.nodes) : []),
+    ...(Array.isArray(journey.actions) ? journey.actions : []),
+    ...(Array.isArray(journey.events) ? journey.events : []),
+    ...(Array.isArray(journey.conditions) ? journey.conditions : []),
+  ];
+
+  rawNodes.forEach((node) => {
+    // node.audiences[] — present on audience_qualification nodes
+    if (Array.isArray(node.audiences)) {
+      node.audiences.forEach(addAudience);
+    }
+    // node.audienceId / node.segmentId — some node shapes use a single ID
+    if (node.audienceId) addAudience({ id: node.audienceId, name: node.audienceName || '' });
+    if (node.segmentId)  addAudience({ id: node.segmentId,  name: node.segmentName  || '' });
+  });
+
+  // 4. Top-level single audienceId
+  if (journey.audienceId) addAudience({ id: journey.audienceId, name: '' });
+  if (journey.segmentId)  addAudience({ id: journey.segmentId,  name: '' });
+
+  // 5. segment object
+  if (journey.segment?.id) addAudience({ id: journey.segment.id, name: journey.segment.name || '' });
+
+  return [...map.values()];
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
 
@@ -203,11 +253,19 @@ app.post('/score', async (req, res) => {
   await acquireSlot(id);
   try {
     // Agent 1 — Audience Resolver
-    const rawAudiences = journey.audiences || [];
+    const rawAudiences = extractAllAudiences(journey);
     let audienceResults = [];
+    const sep = '━'.repeat(80);
+    log('info', `\n${sep}`);
+    log('info', `  AGENT 1 — AUDIENCE RESOLVER`);
+    log('info', sep);
     if (rawAudiences.length && eCfg.token) {
-      log('info', '🎭 Agent 1 — resolving audiences', { journey_id: id, count: rawAudiences.length });
+      log('info', '🎭 Agent 1 — resolving audiences', { journey_id: id, count: rawAudiences.length, ids: rawAudiences.map((a) => a.id).join(', ') });
       audienceResults = await resolveJourneyAudiences(rawAudiences, eCfg);
+    } else if (!rawAudiences.length) {
+      log('info', '🎭 Agent 1 — No audiences found in this journey (or audience resolution skipped).');
+    } else {
+      log('info', '🎭 Agent 1 — Audience resolution skipped (no Adobe token provided).');
     }
 
     // Agent 2 — Journey Scorer
@@ -281,7 +339,7 @@ app.post('/score/batch', async (req, res) => {
     await acquireSlot(id); // eslint-disable-line no-await-in-loop
     try {
       // Agent 1
-      const rawAudiences = journey.audiences || [];
+      const rawAudiences = extractAllAudiences(journey);
       let audienceResults = [];
       if (rawAudiences.length && eCfg.token) {
         // eslint-disable-next-line no-await-in-loop
