@@ -287,107 +287,167 @@ export function scoreBadgeHtml(rule, llm, pending) {
 
 export function aiDetailHtml(rule, llm) {
   if (!rule) return '';
-  let html = '<div class="jcc-ai-detail"><div class="jcc-ai-detail-hdr"><span>&#x1F916;</span> AI Risk Analysis</div>';
-  if (rule.signals.length) {
-    html += '<div class="jcc-ai-signals"><div class="jcc-ai-signals-lbl">Rule Signals</div>';
-    rule.signals.forEach((sig) => {
-      html += `<div class="jcc-ai-signal jcc-ai-sig-${escAI(sig.type)}">`;
-      html += `<span class="jcc-ai-sig-pts">+${sig.points}</span>`;
-      html += `<span class="jcc-ai-sig-lbl">${escAI(sig.label)}</span></div>`;
-    });
-    html += `<div class="jcc-ai-rule-total">Rule Score: <strong>${rule.score}/100</strong></div></div>`;
-  }
-  if (llm && !llm.error) {
-    const fs = combinedScore(rule, llm);
-    html += '<div class="jcc-ai-llm-panel">';
 
-    // ── Business Intent Block (new) ───────────────────────────────────────
-    const hasIntent = llm.lifecycleStage || llm.customerExperience || llm.behaviorTargeted
-      || llm.businessObjective || llm.whyTeamBuiltThis;
+  // ── Verdict: pick the single best label + score ───────────────────────────
+  const hasLlm = llm && !llm.error;
+  const fs = hasLlm ? combinedScore(rule, llm) : rule.score;
+  const verdictLabel = hasLlm
+    ? (llm.lifecycleDecision || llm.retirementLabel || rule.label)
+    : rule.label;
+  const verdictColor = fs >= 80 ? 'red' : fs >= 50 ? 'yellow' : 'green';
+  const verdictIcon = verdictColor === 'red' ? '🔴' : verdictColor === 'yellow' ? '🟡' : '🟢';
+  const confText = hasLlm && llm.confidence ? `${llm.confidence}% confidence` : 'Rule-based';
+  const bizVal = hasLlm && llm.businessValue ? llm.businessValue : null;
+  const bizCls = bizVal === 'high' ? 'jcc-ai-biz-high' : bizVal === 'medium' ? 'jcc-ai-biz-medium' : 'jcc-ai-biz-low';
 
-    if (hasIntent) {
-      html += '<div class="jcc-ai-intent-block">';
-      html += '<div class="jcc-ai-intent-hdr">🎯 Business Intent</div>';
+  // ── Section 1 content: What this journey does ─────────────────────────────
+  function sec1Html() {
+    let s = '';
+    const hasIntent = hasLlm && (llm.lifecycleStage || llm.customerExperience
+      || llm.behaviorTargeted || llm.businessObjective || llm.whyTeamBuiltThis);
 
-      // Lifecycle stage + journey type badges on same row
-      if (llm.lifecycleStage || llm.journeyType) {
-        html += '<div class="jcc-ai-intent-badges">';
-        if (llm.lifecycleStage) html += lifecycleStageBadgeHtml(llm.lifecycleStage);
-        if (llm.journeyType) {
-          const meta = JOURNEY_TYPE_META[llm.journeyType] || { icon: '📋', mod: 'unknown' };
-          html += `<span class="jcc-jtype-badge jcc-jtype-${escAI(meta.mod)}" title="${escAI(llm.useCaseSummary || llm.journeyType)}">${meta.icon} ${escAI(llm.journeyType)}</span>`;
-        }
-        html += '</div>';
-      }
-
-      if (llm.customerExperience) {
-        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Customer experience</span><span class="jcc-ai-intent-val">${escAI(llm.customerExperience)}</span></div>`;
-      }
-      if (llm.behaviorTargeted) {
-        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Behavior targeted</span><span class="jcc-ai-intent-val">${escAI(llm.behaviorTargeted)}</span></div>`;
-      }
-      if (llm.businessObjective) {
-        html += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Business objective</span><span class="jcc-ai-intent-val">${escAI(llm.businessObjective)}</span></div>`;
-      }
-      if (llm.whyTeamBuiltThis) {
-        html += `<div class="jcc-ai-intent-row jcc-ai-intent-why"><span class="jcc-ai-intent-lbl">Why team built this</span><span class="jcc-ai-intent-val">${escAI(llm.whyTeamBuiltThis)}</span></div>`;
-      }
-      html += '</div>';
-    } else if (llm.journeyType || llm.useCaseSummary || llm.targetAudience) {
-      // Fallback: old-style use case block if new intent fields absent
-      html += '<div class="jcc-ai-usecase">';
+    // Badges row
+    if (hasLlm && (llm.lifecycleStage || llm.journeyType)) {
+      s += '<div class="jcc-ai-intent-badges">';
+      if (llm.lifecycleStage) s += lifecycleStageBadgeHtml(llm.lifecycleStage);
       if (llm.journeyType) {
         const meta = JOURNEY_TYPE_META[llm.journeyType] || { icon: '📋', mod: 'unknown' };
-        html += `<div class="jcc-ai-usecase-type"><span class="jcc-jtype-badge jcc-jtype-${escAI(meta.mod)}">${meta.icon} ${escAI(llm.journeyType)}</span></div>`;
+        s += `<span class="jcc-jtype-badge jcc-jtype-${escAI(meta.mod)}" title="${escAI(llm.useCaseSummary || llm.journeyType)}">${meta.icon} ${escAI(llm.journeyType)}</span>`;
       }
-      if (llm.useCaseSummary) {
-        html += `<div class="jcc-ai-usecase-summary"><span class="jcc-ai-usecase-lbl">What it does:</span> ${escAI(llm.useCaseSummary)}</div>`;
-      }
+      s += '</div>';
+    }
+
+    // Summary (once)
+    if (hasLlm && llm.useCaseSummary) {
+      s += `<div class="jcc-ais1-summary">${escAI(llm.useCaseSummary)}</div>`;
+    }
+
+    // Intent rows (only when present)
+    if (hasIntent) {
+      s += '<div class="jcc-ais1-rows">';
       if (llm.targetAudience) {
-        html += `<div class="jcc-ai-usecase-audience"><span class="jcc-ai-usecase-lbl">Target audience:</span> ${escAI(llm.targetAudience)}</div>`;
+        s += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Audience</span><span class="jcc-ai-intent-val">${escAI(llm.targetAudience)}</span></div>`;
       }
-      html += '</div>';
-    }
-
-    // ── Use case summary (always shown when present) ───────────────────────
-    if (llm.useCaseSummary && hasIntent) {
-      html += `<div class="jcc-ai-usecase-summary jcc-ai-usecase-summary--intent"><span class="jcc-ai-usecase-lbl">Summary:</span> ${escAI(llm.useCaseSummary)}</div>`;
-    }
-    if (llm.targetAudience && hasIntent) {
-      html += `<div class="jcc-ai-usecase-audience"><span class="jcc-ai-usecase-lbl">Target audience:</span> ${escAI(llm.targetAudience)}</div>`;
-    }
-
-    html += `<div class="jcc-ai-llm-row">`;
-    html += `<span class="jcc-ai-llm-lbl">Business Value</span><span class="jcc-ai-biz-${escAI(llm.businessValue || 'low')}">${escAI(llm.businessValue || '\u2014')}</span>`;
-    html += `<span class="jcc-ai-llm-lbl">LLM Score</span><strong>${llm.retirementScore || '?'}/100</strong>`;
-    html += `<span class="jcc-ai-llm-lbl">Combined</span><strong>${fs}/100</strong>`;
-    html += `<span class="jcc-ai-llm-lbl">Confidence</span><span>${llm.confidence || '?'}%</span></div>`;
-    if (llm.businessPurpose) html += `<div class="jcc-ai-purpose"><strong>Business Purpose:</strong> ${escAI(llm.businessPurpose)}</div>`;
-    if (llm.reasoning) html += `<div class="jcc-ai-reasoning">${escAI(llm.reasoning)}</div>`;
-
-    // ── Governance split: lifecycle decision + review priority ─────────────
-    if (llm.lifecycleDecision || llm.governanceReviewPriority) {
-      html += '<div class="jcc-ai-governance-row">';
-      if (llm.lifecycleDecision) {
-        const ldCls = llm.lifecycleDecision.toLowerCase() === 'keep' ? 'jcc-ai-rec-keep'
-          : llm.lifecycleDecision.toLowerCase() === 'archive' ? 'jcc-ai-rec-retire' : 'jcc-ai-rec-review';
-        html += `<span class="jcc-ai-gov-decision ${ldCls}">📋 Lifecycle: <strong>${escAI(llm.lifecycleDecision)}</strong></span>`;
+      if (llm.customerExperience) {
+        s += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Customer experience</span><span class="jcc-ai-intent-val">${escAI(llm.customerExperience)}</span></div>`;
       }
-      if (llm.governanceReviewPriority) {
-        const gpCls = llm.governanceReviewPriority.toLowerCase() === 'low' ? 'jcc-ai-gov-low'
-          : llm.governanceReviewPriority.toLowerCase() === 'high' ? 'jcc-ai-gov-high' : 'jcc-ai-gov-medium';
-        html += `<span class="jcc-ai-gov-priority ${gpCls}">🔍 Review priority: <strong>${escAI(llm.governanceReviewPriority)}</strong></span>`;
+      if (llm.behaviorTargeted) {
+        s += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Behavior targeted</span><span class="jcc-ai-intent-val">${escAI(llm.behaviorTargeted)}</span></div>`;
       }
-      html += '</div>';
+      if (llm.businessObjective) {
+        s += `<div class="jcc-ai-intent-row"><span class="jcc-ai-intent-lbl">Business objective</span><span class="jcc-ai-intent-val">${escAI(llm.businessObjective)}</span></div>`;
+      }
+      if (llm.whyTeamBuiltThis) {
+        s += `<div class="jcc-ai-intent-row jcc-ai-intent-why"><span class="jcc-ai-intent-lbl">Why it was built</span><span class="jcc-ai-intent-val">${escAI(llm.whyTeamBuiltThis)}</span></div>`;
+      }
+      s += '</div>';
+    } else if (!hasLlm) {
+      s += '<p class="jcc-ais1-no-llm">AI not yet run — rule-based score only.</p>';
     }
-
-    const rc = llm.retirementLabel && llm.retirementLabel.toLowerCase().includes('retire') ? 'jcc-ai-rec-retire'
-      : llm.retirementLabel && llm.retirementLabel.toLowerCase().includes('keep') ? 'jcc-ai-rec-keep' : 'jcc-ai-rec-review';
-    html += `<div class="jcc-ai-recommendation ${rc}"><strong>Recommendation:</strong> ${escAI(llm.recommendation || llm.retirementLabel || '\u2014')}</div>`;
-    html += '</div>';
-  } else if (llm && llm.error) {
-    html += `<div class="jcc-ai-err-note">&#x26A0; LLM failed: ${escAI(llm.error)} \u2014 rule-based score only.</div>`;
+    return s;
   }
+
+  // ── Section 2 content: Why AI thinks this ────────────────────────────────
+  function sec2Html() {
+    let s = '';
+    if (!hasLlm) {
+      s += '<p class="jcc-ais1-no-llm">LLM analysis not available.</p>';
+      return s;
+    }
+
+    // Score bar
+    const barPct = Math.min(100, fs);
+    const barCls = verdictColor === 'red' ? 'jcc-score-bar-red' : verdictColor === 'yellow' ? 'jcc-score-bar-yellow' : 'jcc-score-bar-green';
+    s += `<div class="jcc-score-bar-wrap">`;
+    s += `  <div class="jcc-score-bar-track"><div class="jcc-score-bar-fill ${barCls}" style="width:${barPct}%"></div></div>`;
+    s += `  <span class="jcc-score-bar-num">${fs}/100</span>`;
+    s += `</div>`;
+
+    // Business value chip + confidence
+    s += '<div class="jcc-ais2-meta">';
+    if (bizVal) s += `<span class="jcc-ais2-chip ${bizCls}">Business value: <strong>${escAI(bizVal)}</strong></span>`;
+    if (llm.governanceReviewPriority) {
+      const gpCls = llm.governanceReviewPriority.toLowerCase() === 'low' ? 'jcc-ai-gov-low'
+        : llm.governanceReviewPriority.toLowerCase() === 'high' ? 'jcc-ai-gov-high' : 'jcc-ai-gov-medium';
+      s += `<span class="jcc-ai-gov-priority ${gpCls}">Review priority: <strong>${escAI(llm.governanceReviewPriority)}</strong></span>`;
+    }
+    s += '</div>';
+
+    // Reasoning (once — replaces both businessPurpose and reasoning duplication)
+    const reasonText = llm.reasoning || llm.businessPurpose || '';
+    if (reasonText) {
+      s += `<div class="jcc-ai-reasoning">${escAI(reasonText)}</div>`;
+    }
+
+    // Recommendation callout (single)
+    const recText = llm.recommendation || llm.retirementLabel || verdictLabel;
+    const recCls = verdictColor === 'red' ? 'jcc-ai-rec-retire'
+      : verdictColor === 'green' ? 'jcc-ai-rec-keep' : 'jcc-ai-rec-review';
+    s += `<div class="jcc-ai-recommendation ${recCls}">&#x2192; ${escAI(recText)}</div>`;
+
+    return s;
+  }
+
+  // ── Section 3 content: Rule signals ──────────────────────────────────────
+  function sec3Html() {
+    let s = '';
+    if (rule.signals.length) {
+      s += '<div class="jcc-ai-signals">';
+      rule.signals.forEach((sig) => {
+        s += `<div class="jcc-ai-signal jcc-ai-sig-${escAI(sig.type)}">`;
+        s += `<span class="jcc-ai-sig-pts">+${sig.points}</span>`;
+        s += `<span class="jcc-ai-sig-lbl">${escAI(sig.label)}</span></div>`;
+      });
+      s += '</div>';
+    } else {
+      s += '<p class="jcc-ais1-no-llm">No rule signals fired.</p>';
+    }
+    if (hasLlm) {
+      s += `<div class="jcc-ais3-scores">`;
+      s += `<span>Rule: <strong>${rule.score}/100</strong></span>`;
+      s += `<span>LLM: <strong>${llm.retirementScore || '?'}/100</strong></span>`;
+      s += `<span>Combined: <strong>${fs}/100</strong></span>`;
+      s += `</div>`;
+    }
+    return s;
+  }
+
+  // ── Assemble ──────────────────────────────────────────────────────────────
+  let html = '<div class="jcc-ai-detail">';
+
+  // Always-visible header with gradient title bar
+  html += '<div class="jcc-ai-detail-hdr"><span>&#x1F916;</span> AI Risk Analysis</div>';
+
+  // Always-visible verdict bar
+  html += `<div class="jcc-ai-verdict-bar jcc-verdict-${verdictColor}">`;
+  html += `  <span class="jcc-verdict-icon">${verdictIcon}</span>`;
+  html += `  <span class="jcc-verdict-score">${fs}</span>`;
+  html += `  <span class="jcc-verdict-label">${escAI(verdictLabel)}</span>`;
+  html += `  <span class="jcc-verdict-conf">${escAI(confText)}</span>`;
+  html += `</div>`;
+
+  if (llm && llm.error) {
+    html += `<div class="jcc-ai-err-note">&#x26A0; LLM failed: ${escAI(llm.error)} \u2014 rule-based score shown.</div>`;
+  }
+
+  // Section 1 — What this journey does
+  html += `<details class="jcc-ai-section" open>`;
+  html += `  <summary class="jcc-ai-section-sum"><span class="jcc-ai-sec-num">1</span> What this journey does</summary>`;
+  html += `  <div class="jcc-ai-section-body">${sec1Html()}</div>`;
+  html += `</details>`;
+
+  // Section 2 — Why the AI thinks this (only when LLM available)
+  html += `<details class="jcc-ai-section">`;
+  html += `  <summary class="jcc-ai-section-sum"><span class="jcc-ai-sec-num">2</span> Why the AI thinks this</summary>`;
+  html += `  <div class="jcc-ai-section-body">${sec2Html()}</div>`;
+  html += `</details>`;
+
+  // Section 3 — Rule signals
+  html += `<details class="jcc-ai-section">`;
+  html += `  <summary class="jcc-ai-section-sum"><span class="jcc-ai-sec-num">3</span> Rule signals</summary>`;
+  html += `  <div class="jcc-ai-section-body">${sec3Html()}</div>`;
+  html += `</details>`;
+
   html += '</div>';
   return html;
 }

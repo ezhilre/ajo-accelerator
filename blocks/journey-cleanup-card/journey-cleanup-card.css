@@ -1348,17 +1348,226 @@ a.jcc-go-btn:active,
   font-style: italic;
 }
 
-/* Rule signals */
-.jcc-ai-signals { padding: 0.75rem 1rem; border-bottom: 1px solid #ddd8ff; }
-.jcc-ai-signals-lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6e6e6e; margin-bottom: 0.4rem; }
+/* ── Verdict bar — always visible, decision-first ────────────────────────── */
+
+.jcc-ai-verdict-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #dde5ff;
+  flex-wrap: wrap;
+}
+
+.jcc-verdict-icon { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
+
+.jcc-verdict-score {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  flex-shrink: 0;
+}
+
+.jcc-verdict-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  flex: 1;
+  min-width: 80px;
+}
+
+.jcc-verdict-conf {
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.7;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.jcc-verdict-red    { background: #fff0f0; }
+.jcc-verdict-red    .jcc-verdict-score { color: #c9252d; }
+.jcc-verdict-red    .jcc-verdict-label { color: #c9252d; }
+
+.jcc-verdict-yellow { background: #fffbf0; }
+.jcc-verdict-yellow .jcc-verdict-score { color: #a85900; }
+.jcc-verdict-yellow .jcc-verdict-label { color: #a85900; }
+
+.jcc-verdict-green  { background: #f0faf6; }
+.jcc-verdict-green  .jcc-verdict-score { color: #0d7055; }
+.jcc-verdict-green  .jcc-verdict-label { color: #0d7055; }
+
+/* ── Accordion sections ──────────────────────────────────────────────────── */
+
+.jcc-ai-section {
+  border-top: 1px solid #dde5ff;
+}
+
+.jcc-ai-section-sum {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background 0.12s;
+}
+
+.jcc-ai-section-sum::-webkit-details-marker { display: none; }
+
+.jcc-ai-section-sum::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: #8d8d8d;
+  transition: transform 0.18s ease;
+}
+
+.jcc-ai-section[open] > .jcc-ai-section-sum::after {
+  transform: rotate(90deg);
+}
+
+.jcc-ai-section-sum:hover { background: rgba(20, 115, 230, 0.05); }
+
+.jcc-ai-sec-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #7e5fcf;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.jcc-ai-section-body {
+  padding: 0.65rem 1rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border-top: 1px solid #eee8ff;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* Section 1 helpers */
+.jcc-ais1-summary {
+  font-size: 0.85rem;
+  color: #2c2c2c;
+  line-height: 1.5;
+  padding: 0.4rem 0;
+}
+
+.jcc-ais1-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid #e8e0ff;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.jcc-ais1-no-llm {
+  font-size: 0.8rem;
+  color: #8d8d8d;
+  font-style: italic;
+  margin: 0;
+  padding: 0.2rem 0;
+}
+
+/* Section 2 helpers */
+
+/* Score progress bar */
+.jcc-score-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.jcc-score-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #e8e0ff;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.jcc-score-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.jcc-score-bar-red    { background: linear-gradient(90deg, #e34850, #c9252d); }
+.jcc-score-bar-yellow { background: linear-gradient(90deg, #f5a623, #e68619); }
+.jcc-score-bar-green  { background: linear-gradient(90deg, #34b88c, #2d9d78); }
+
+.jcc-score-bar-num {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  white-space: nowrap;
+  min-width: 40px;
+  text-align: right;
+}
+
+.jcc-ais2-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.jcc-ais2-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  border: 1px solid transparent;
+}
+
+/* Section 3 score summary */
+.jcc-ais3-scores {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: #4b4b4b;
+  padding-top: 0.4rem;
+  border-top: 1px solid #eee8ff;
+  margin-top: 0.2rem;
+}
+
+.jcc-ais3-scores strong { color: #2c2c2c; }
+
+/* Shared: rule signals */
+.jcc-ai-signals {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid #e8e0ff;
+  border-radius: 6px;
+  overflow: hidden;
+}
 
 .jcc-ai-signal {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0;
+  padding: 0.3rem 0.65rem;
   font-size: 0.8rem;
+  border-bottom: 1px solid #f0ecff;
 }
+
+.jcc-ai-signal:last-child { border-bottom: none; }
 
 .jcc-ai-sig-pts {
   background: #e8e0ff;
@@ -1370,6 +1579,7 @@ a.jcc-go-btn:active,
   white-space: nowrap;
   min-width: 36px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .jcc-ai-sig-critical .jcc-ai-sig-pts { background: #fce5e7; color: #c9252d; }
@@ -1378,47 +1588,33 @@ a.jcc-go-btn:active,
 
 .jcc-ai-sig-lbl { color: #2c2c2c; }
 
-.jcc-ai-rule-total {
-  margin-top: 0.5rem;
+/* Shared: intent rows (used by section 1 .jcc-ais1-rows) */
+.jcc-ai-intent-row {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
   font-size: 0.82rem;
-  color: #4b4b4b;
-  font-style: italic;
+  padding: 0.3rem 0.65rem;
+  border-bottom: 1px solid #f0ecff;
 }
 
-/* LLM panel */
-.jcc-ai-llm-panel { padding: 0.75rem 1rem; }
+.jcc-ai-intent-row:last-child { border-bottom: none; }
 
-.jcc-ai-llm-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  margin-bottom: 0.65rem;
-  font-size: 0.82rem;
-}
-
-.jcc-ai-llm-lbl {
-  font-size: 0.7rem;
+.jcc-ai-intent-lbl {
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #6e6e6e;
+  white-space: nowrap;
 }
 
-.jcc-ai-biz-low    { color: #c9252d; font-weight: 700; }
-.jcc-ai-biz-medium { color: #a85900; font-weight: 700; }
-.jcc-ai-biz-high   { color: #0d7055; font-weight: 700; }
+.jcc-ai-intent-val { color: #2c2c2c; line-height: 1.45; }
 
-.jcc-ai-purpose {
-  font-size: 0.82rem;
-  color: #2c2c2c;
-  background: #fff;
-  border: 1px solid #e1e1e1;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.5rem;
-}
+.jcc-ai-intent-why .jcc-ai-intent-val { color: #1473e6; font-style: italic; }
 
+/* Shared: reasoning block */
 .jcc-ai-reasoning {
   font-size: 0.82rem;
   color: #4b4b4b;
@@ -1426,49 +1622,44 @@ a.jcc-go-btn:active,
   border-left: 3px solid #7e5fcf;
   padding: 0.5rem 0.75rem;
   border-radius: 0 4px 4px 0;
-  margin-bottom: 0.5rem;
   line-height: 1.5;
 }
 
+/* Shared: recommendation callout */
 .jcc-ai-recommendation {
-  display: inline-block;
-  padding: 0.3rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.9rem;
   border-radius: 12px;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  margin-top: 0.25rem;
+  align-self: flex-start;
 }
 
 .jcc-ai-rec-retire { background: #fce5e7; color: #c9252d; border: 1px solid #f4b8bb; }
 .jcc-ai-rec-review { background: #fce7c0; color: #a85900; border: 1px solid #f4d48a; }
+.jcc-ai-rec-keep   { background: #cef5e7; color: #0d7055; border: 1px solid #a0dfc6; }
 
-/* ── Governance split row (lifecycle decision + review priority) ── */
-.jcc-ai-governance-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 4px;
-}
+/* Shared: business value + governance priority chips */
+.jcc-ai-biz-low    { color: #c9252d; font-weight: 700; }
+.jcc-ai-biz-medium { color: #a85900; font-weight: 700; }
+.jcc-ai-biz-high   { color: #0d7055; font-weight: 700; }
 
-.jcc-ai-gov-decision,
 .jcc-ai-gov-priority {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 0.18rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
   font-weight: 500;
   border: 1px solid transparent;
 }
 
-/* Lifecycle decision — inherits rec colours via shared classes */
-
-/* Governance review priority */
 .jcc-ai-gov-low    { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
 .jcc-ai-gov-medium { background: #fff8e1; color: #a85900; border-color: #ffe082; }
 .jcc-ai-gov-high   { background: #fce5e7; color: #c9252d; border-color: #f4b8bb; }
-.jcc-ai-rec-keep   { background: #cef5e7; color: #0d7055; border: 1px solid #a0dfc6; }
 
 .jcc-ai-err-note {
   padding: 0.65rem 1rem;
@@ -1740,77 +1931,13 @@ a.jcc-go-btn:active,
   word-break: break-word;
 }
 
-/* ── Business Intent Block (new — inside expanded detail panel) ──────────── */
-
-.jcc-ai-intent-block {
-  background: linear-gradient(135deg, #f0f9f4 0%, #f0f4ff 100%);
-  border: 1px solid #a0dfc6;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.jcc-ai-intent-hdr {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #0d7055;
-  margin-bottom: 0.2rem;
-}
+/* ── Intent badges row (used in accordion section 1) ────────────────────── */
 
 .jcc-ai-intent-badges {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin-bottom: 0.3rem;
-}
-
-.jcc-ai-intent-row {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 0.5rem;
-  align-items: baseline;
-  font-size: 0.82rem;
-  padding: 0.2rem 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.jcc-ai-intent-row:first-of-type { border-top: none; }
-
-.jcc-ai-intent-lbl {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #6e6e6e;
-  white-space: nowrap;
-}
-
-.jcc-ai-intent-val {
-  color: #2c2c2c;
-  line-height: 1.45;
-}
-
-/* "Why team built this" row — slightly highlighted */
-.jcc-ai-intent-why .jcc-ai-intent-val {
-  color: #1473e6;
-  font-style: italic;
-}
-
-/* Summary line shown after intent block */
-.jcc-ai-usecase-summary--intent {
-  font-size: 0.82rem;
-  color: #4b4b4b;
-  background: #f5f5f5;
-  border-left: 3px solid #1473e6;
-  padding: 0.4rem 0.65rem;
-  border-radius: 0 4px 4px 0;
-  margin-bottom: 0.5rem;
 }
 
 /* ── Lifecycle stage badges ───────────────────────────────────────────────── */
@@ -1839,36 +1966,6 @@ a.jcc-go-btn:active,
 .jcc-lifecycle-loyalty      { background: #fff3e0; color: #bf360c; border-color: #ffcc80; }
 .jcc-lifecycle-unknown      { background: #fafafa; color: #757575; border-color: #e0e0e0; }
 
-/* ── Use Case section inside expanded detail panel ───────────────────────── */
-
-.jcc-ai-usecase {
-  background: linear-gradient(135deg, #f0f8ff 0%, #f5f0ff 100%);
-  border: 1px solid #c9d8ff;
-  border-radius: 6px;
-  padding: 0.65rem 0.85rem;
-  margin-bottom: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.jcc-ai-usecase-type { margin-bottom: 0.1rem; }
-
-.jcc-ai-usecase-summary,
-.jcc-ai-usecase-audience {
-  font-size: 0.82rem;
-  color: #2c2c2c;
-  line-height: 1.45;
-}
-
-.jcc-ai-usecase-lbl {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #6e6e6e;
-  margin-right: 0.3rem;
-}
 
 /* ── Proxy-down error banner ─────────────────────────────────────────────── */
 
