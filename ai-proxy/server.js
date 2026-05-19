@@ -510,6 +510,155 @@ function extractChannelSummary(actions) {
   };
 }
 
+// ── Journey flow path builder (graph traversal → indented readable string) ───
+// Walks canvas nodes via transition edges, producing:
+//   Audience Entry ("Segment Name")
+//   → In-App Message ("Action Name")
+//   → Condition: "Branch Name"
+//      [Yes] → Wait (24h) → End
+//      [No]  → In-App Message ("Other IAM") → End
+
+function buildFlowPath(journey) {
+  // Collect raw node list
+  let rawNodes = [];
+  if (Array.isArray(journey.canvas?.nodes) && journey.canvas.nodes.length) {
+    rawNodes = journey.canvas.nodes;
+  } else if (Array.isArray(journey.nodes) && journey.nodes.length) {
+    rawNodes = journey.nodes;
+  } else if (journey.canvas?.nodes && typeof journey.canvas.nodes === 'object') {
+    rawNodes = Object.values(journey.canvas.nodes);
+  }
+
+  if (!rawNodes.length) return null;
+
+  // Build lookup map  id → node
+  const nodeMap = new Map();
+  rawNodes.forEach((n) => { if (n.id) nodeMap.set(n.id, n); });
+
+  // Find start node: prefer canvas.startNodeId, then first event-type node
+  const startId = journey.canvas?.startNodeId
+    || rawNodes.find((n) => EVENT_TYPES.test((n.type || n.nodeType || '').toLowerCase()))?.id
+    || rawNodes[0]?.id;
+
+  if (!startId) return null;
+
+  const visited = new Set();
+
+  function nodeLabel(n) {
+    const type = (n.type || n.nodeType || n.actionType || '').toLowerCase();
+    const name = n.name || n.label || '';
+    if (EVENT_TYPES.test(type)) {
+      const base = type === 'read_segment' || type === 'audience_entry' ? 'Audience Entry' : 'Event Trigger';
+      return name ? `${base} ("${name}")` : base;
+    }
+    if (COND_TYPES.test(type)) {
+      return name ? `Condition: "${name}"` : 'Condition';
+    }
+    if (/\btimer\b|\bwait\b/i.test(type)) {
+      const dur = n.waitDuration || n.duration || '';
+      const unit = (n.waitUnit || n.unit || '').replace(/s$/, '');
+      return dur ? `Wait (${dur}${unit ? ' ' + unit : ''})` : 'Wait';
+    }
+    if (/inapp|in.app|\biam\b/i.test(type)) return name ? `In-App Message ("${name}")` : 'In-App Message';
+    if (/email_message|^email$/i.test(type)) return name ? `Email ("${name}")` : 'Email';
+    if (/\bsms\b/i.test(type)) return name ? `SMS ("${name}")` : 'SMS';
+    if (/\bpush\b/i.test(type)) return name ? `Push ("${name}")` : 'Push Notification';
+    if (/content.?card/i.test(type)) return name ? `Content Card ("${name}")` : 'Content Card';
+    if (/direct.?mail/i.test(type)) return name ? `Direct Mail ("${name}")` : 'Direct Mail';
+    if (/web.?action|\bweb\b/i.test(type)) return name ? `Web Action ("${name}")` : 'Web Action';
+    if (/code.?based/i.test(type)) return name ? `Code-Based ("${name}")` : 'Code-Based Experience';
+    if (/custom_action|\bcustom\b/i.test(type)) return name ? `Custom Action ("${name}")` : 'Custom Action';
+    if (END_TYPES.test(type)) return 'End';
+    return name ? `${type} ("${name}")` : type || 'Unknown Node';
+  }
+
+  // Recursive path builder; returns array of lines
+  function walk(nodeId, depth, branchLabel) {
+    if (depth > 15 || visited.has(nodeId)) return ['…(cycle or depth limit)'];
+    visited.add(nodeId);
+    const n = nodeMap.get(nodeId);
+    if (!n) return [];
+
+    const type = (n.type || n.nodeType || '').toLowerCase();
+    const isEnd = END_TYPES.test(type);
+    const indent = '   '.repeat(depth);
+    const prefix = depth === 0 ? '' : (branchLabel ? `[${branchLabel}] ` : '→ ');
+    const label = isEnd ? 'End' : nodeLabel(n);
+    const lines = [`${indent}${prefix}${label}`];
+
+    if (isEnd) return lines;
+
+    const transitions = Array.isArray(n.transitions) ? n.transitions : [];
+
+    if (COND_TYPES.test(type) && transitions.length > 1) {
+      // Branch — render each transition as an indented sub-path
+      transitions.forEach((t) => {
+        const branchName = t.name || t.label || t.type || 'branch';
+        const nextId = t.nextNodeId || t.targetNodeId || t.id;
+        if (nextId && !visited.has(nextId)) {
+          const subLines = walk(nextId, depth + 1, branchName);
+          lines.push(...subLines);
+        } else if (!nextId) {
+          lines.push(`${'   '.repeat(depth + 1)}[${branchName}] → End`);
+        }
+      });
+    } else if (transitions.length === 1) {
+      const nextId = transitions[0].nextNodeId || transitions[0].targetNodeId;
+      if (nextId) {
+        const subLines = walk(nextId, depth, null);
+        // Inline single transitions with →
+        if (subLines.length === 1) {
+          lines[lines.length - 1] += ` → ${subLines[0].trimStart()}`;
+        } else {
+          lines.push(...subLines);
+        }
+      }
+    } else if (transitions.length === 0) {
+      // No explicit transitions — try nextNodeId directly on node
+      const nextId = n.nextNodeId || n.targetNodeId;
+      if (nextId && !visited.has(nextId)) {
+        const subLines = walk(nextId, depth, null);
+        lines.push(...subLines);
+      }
+    }
+
+    return lines;
+  }
+
+  try {
+    const lines = walk(startId, 0, null);
+    return lines.join('\n');
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── Business signal checklist builder ────────────────────────────────────────
+function buildBusinessSignals(actions, events, conditions, audienceNames, audienceId, description) {
+  const hasAudienceQualification = !!(events.length || audienceId || audienceNames.length);
+  const hasMessagingActions = actions.filter((a) => {
+    const t = (a.type || a.nodeType || a.actionType || '').toLowerCase();
+    return /inapp|in.app|\biam\b|email|sms|push|content.?card|direct.?mail|web.?action|code.?based/i.test(t);
+  }).length > 0;
+  const hasBranching = conditions.length > 0;
+  const hasWaitLogic = actions.filter((a) => /\btimer\b|\bwait\b/i.test((a.type || a.nodeType || '').toLowerCase())).length > 0;
+  const hasNamedSegments = audienceNames.length > 0;
+  const hasDescription = !!(description && description.trim());
+  const isStructureEmpty = actions.length === 0 && conditions.length === 0 && events.length === 0;
+
+  const yn = (v) => v ? 'YES' : 'no';
+
+  return [
+    `- Has audience qualification:       ${yn(hasAudienceQualification)}`,
+    `- Has customer messaging actions:   ${yn(hasMessagingActions)}`,
+    `- Has segmentation/branching logic: ${yn(hasBranching)}`,
+    `- Has wait/timing logic:            ${yn(hasWaitLogic)}`,
+    `- Has named audience segments:      ${audienceNames.length ? 'YES (' + audienceNames.join(', ') + ')' : 'no'}`,
+    `- Has description:                  ${hasDescription ? 'YES: "' + description.slice(0, 120) + '"' : 'no'}`,
+    `- Structure is empty/shell:         ${yn(isStructureEmpty)}`,
+  ].join('\n');
+}
+
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(journey) {
   const meta = journey.metadata || {};
@@ -581,6 +730,8 @@ function buildPrompt(journey) {
     : '';
 
   const { actions, events, conditions, allNodes } = extractNodes(journey);
+  // Build human-readable flow path (graph traversal)
+  const flowPath = buildFlowPath(journey);
 
   // Safely serialize tags — AJO returns tag objects {id, name}, not plain strings
   const rawTags = journey.tags || [];
@@ -654,47 +805,28 @@ function buildPrompt(journey) {
     })
     : [];
 
-  // Name-based type hint — strong signal even when structure is empty
+  // Build business signals checklist
+  const allForAudienceSignals = allNodes.length ? allNodes : [...actions, ...events, ...conditions];
+  const businessSignals = buildBusinessSignals(actions, events, conditions, audienceNames, audienceId, description);
+
+  // Name-based type hint — used as supporting signal when structure is empty
   const nameTypeHint = inferJourneyTypeFromName(name);
   const nameHintLine = nameTypeHint
-    ? `- Journey type inferred from name: "${nameTypeHint}" (use this as strong signal)`
-    : '- Journey type inferred from name: unclear — use other signals';
+    ? `Name-based type hint: "${nameTypeHint}" (supporting signal — structure takes precedence)`
+    : 'Name-based type hint: unclear';
 
   // Structural data availability note
   const structureNote = nodeCount === 0
-    ? '⚠ No structural node data available (list-level endpoint) — rely on name, status, tags, and description for classification.'
+    ? '⚠ No structural node data available from API — rely on name, status, tags, and description for classification.'
     : '';
 
-  // Build raw node section (only when structural data exists)
+  // Raw node section — supplementary only, moved to bottom
   const rawNodeSection = trimmedNodes.length > 0
-    ? `\nRAW NODE LIST (${trimmedNodes.length} of ${allNodes.length} canvas nodes — use for deeper classification):\n${JSON.stringify(trimmedNodes)}\n`
+    ? `\nSUPPLEMENTARY NODE DATA (for reference only — use JOURNEY FLOW above as primary structure signal):\n${JSON.stringify(trimmedNodes)}\n`
     : '';
 
-  return `You are an Adobe Journey Optimizer governance expert reviewing journeys for retirement.
-
-JOURNEY METADATA:
-- Name: "${name}"
-- Status: ${status} | Version: ${version} | Days stale: ${daysStale}
-- Journey execution type: ${journeyApiType || 'unknown'} (unitary = event-triggered; read_segment = audience batch)
-- Created by: ${createdBy} on ${createdAt}
-- Last modified by: ${modifiedBy} on ${modifiedAt}
-${lastDeployedBy ? `- Last deployed by: ${lastDeployedBy} on ${lastDeployedAt}` : ''}
-- Name is AJO default (never renamed by user): ${isDefaultName}
-${nameHintLine}
-${sandboxName ? `- Sandbox: ${sandboxName}` : ''}
-${category ? `- Category: ${category}` : ''}
-
-JOURNEY CONFIGURATION:
-- Schedule: ${schedLine}
-- Re-entrance policy: ${reentLine}
-- Entry configuration: ${entryLine}
-- Exit criteria: ${exitLine}
-${timeoutLine ? `- Timeouts: ${timeoutLine}` : ''}
-
-JOURNEY STRUCTURE:
-- Total non-end nodes: ${nodeCount}${structureNote ? '\n  ' + structureNote : ''}
-- Entry trigger: ${triggerInfo || 'none / unknown'}
-- Actions: ${actions.length} total (${[
+  // Channel count summary line
+  const channelSummary = [
     emailCount       ? `email: ${emailCount}`              : '',
     smsCount         ? `SMS: ${smsCount}`                  : '',
     pushCount        ? `push: ${pushCount}`                : '',
@@ -705,40 +837,175 @@ JOURNEY STRUCTURE:
     codeBasedCount   ? `code-based: ${codeBasedCount}`     : '',
     timerCount       ? `timer/wait: ${timerCount}`         : '',
     customCount      ? `custom: ${customCount}`            : '',
-  ].filter(Boolean).join(', ') || 'none'})
-${actionNames.length ? `- Action names: ${actionNames.join(' | ')}` : ''}
-- Conditions/branches: ${conditions.length}
-${conditionNames.length ? `- Condition names: ${conditionNames.join(' | ')}` : ''}
-- Audience segments checked in conditions: ${audienceNames.length ? audienceNames.join(', ') : 'none detected'}
-- Has audience/segment: ${audienceId ? 'YES (' + audienceId + ')' : 'No'}
-- Has description: ${description ? 'YES: "' + description.slice(0, 200) + '"' : 'No'}
+  ].filter(Boolean).join(', ') || 'none';
+
+  return `You are an Adobe Journey Optimizer governance and lifecycle analysis expert.
+
+Your job has four steps, which you MUST complete in order:
+  Step 1 — Understand what the journey does (business classification)
+  Step 2 — Identify who it targets (audience and purpose)
+  Step 3 — Assess operational status and staleness
+  Step 4 — Recommend whether to keep, review, or retire
+
+Complete Steps 1 and 2 fully before drawing any conclusions about retirement.
+
+══════════════════════════════════════════════════════
+CLASSIFICATION RULES (follow strictly, in priority order)
+══════════════════════════════════════════════════════
+1. STRUCTURE IS THE PRIMARY SIGNAL. Journey flow, audience logic, conditions, and
+   message actions reveal business intent. Use them first.
+
+2. Draft status means UNPUBLISHED — not abandoned and not purposeless.
+   A Draft journey with entry logic, conditions, and message actions has real
+   business purpose regardless of how long it has been in draft.
+
+3. Staleness (days since last modified) affects retirement priority ONLY.
+   It does NOT determine business purpose. A 200-day-stale journey with a real
+   workflow is not the same as a 200-day-stale empty shell.
+
+4. Name tokens ("Delete", "Test", "Old", "v2", "copy") are WEAK signals.
+   They raise suspicion but CANNOT override structural evidence.
+   If the flow shows audience qualification + conditions + message actions,
+   the journey has business purpose regardless of what the name says.
+
+5. IF a journey has ≥1 entry event OR audience qualifier PLUS ≥1 condition PLUS
+   ≥1 message action → businessPurpose MUST describe what that workflow does.
+   "No identifiable business purpose" is ONLY valid when ALL of these are true:
+     a) name is a generic AJO default (e.g. "Journey1082")  AND
+     b) 0 message actions  AND
+     c) 0 conditions  AND
+     d) no description or tags providing context.
+
+6. Test/POC classification requires: a placeholder/generic name AND
+   empty or trivial structure (≤1 node, no real audience logic, no message actions).
+   A journey with segmentation, branching, and in-app messaging is NOT Test/POC
+   even if the name contains "Test", "Delete", or "POC".
+
+7. CONSISTENCY RULE: If useCaseSummary describes a real workflow,
+   businessPurpose must also describe a real purpose. Contradictory output is invalid.
+
+══════════════════════════════════════════════════════
+CALIBRATION EXAMPLES
+══════════════════════════════════════════════════════
+EXAMPLE A — Real journey with a suspicious name (CORRECT classification):
+  name: "Delete_InApp_Auth_v2" | status: draft | days_stale: 95
+  flow: Audience Entry ("App Users") → In-App Message ("Sign-in Prompt")
+        → Condition ("Paid vs Free")
+           [Paid] → End
+           [Free] → In-App Message ("Credit Modal IAM") → Wait (24h) → End
+  business signals: audience qualification YES, messaging YES, branching YES
+
+  CORRECT output:
+    journeyType: "Retention"
+    useCaseSummary: "Delivers in-app authentication messaging to app users with a paid vs
+      free branch — paid users exit immediately, free users receive a credit modal IAM
+      followed by a 24-hour wait."
+    targetAudience: "App users, segmented into paid and free tiers"
+    businessPurpose: "Qualifies app users and delivers targeted in-app auth messaging
+      based on subscription tier"
+    businessValue: "medium"
+    retirementScore: 58
+    retirementLabel: "Review First"
+    confidence: 75
+    reasoning: "Draft status and 'Delete' in the name are weak signals that do not
+      override the structural evidence. The journey has a real audience qualifier, an
+      in-app message action, a paid/free condition branch, and a wait step — consistent
+      with a live retention or onboarding auth flow. Recommend owner review before
+      any retirement action."
+    recommendation: "Review with owner"
+
+EXAMPLE B — Empty shell (CORRECT classification):
+  name: "Journey1082" | status: draft | days_stale: 210
+  flow: (no nodes — 0 actions, 0 conditions, 0 events)
+  business signals: all NO
+
+  CORRECT output:
+    journeyType: "Unknown"
+    useCaseSummary: "Unable to determine — no structural nodes present"
+    targetAudience: "Unknown"
+    businessPurpose: "No identifiable business purpose"
+    businessValue: "low"
+    retirementScore: 88
+    retirementLabel: "Safe to Retire"
+    confidence: 90
+    reasoning: "AJO default name that was never renamed, zero structural nodes, 210
+      days stale. There is nothing to preserve and no evidence of business intent."
+    recommendation: "Archive"
+
+══════════════════════════════════════════════════════
+JOURNEY DATA
+══════════════════════════════════════════════════════
+METADATA:
+- Name: "${name}"
+- Status: ${status} | Version: ${version} | Days stale: ${daysStale}
+- Journey execution type: ${journeyApiType || 'unknown'} (unitary = event-triggered; read_segment = audience batch)
+- Created by: ${createdBy} on ${createdAt}
+- Last modified by: ${modifiedBy} on ${modifiedAt}
+${lastDeployedBy ? `- Last deployed by: ${lastDeployedBy} on ${lastDeployedAt}` : ''}
+- Name is AJO default (never renamed): ${isDefaultName}
+- ${nameHintLine}
+${sandboxName ? `- Sandbox: ${sandboxName}` : ''}
+${category ? `- Category: ${category}` : ''}
 - Tags: ${tagNames.length ? tagNames.join(', ') : 'none'}
+
+CONFIGURATION:
+- Schedule: ${schedLine}
+- Re-entrance policy: ${reentLine}
+- Entry configuration: ${entryLine}
+- Exit criteria: ${exitLine}
+${timeoutLine ? `- Timeouts: ${timeoutLine}` : ''}
+
+JOURNEY FLOW (primary structure signal):
+${flowPath
+    ? flowPath
+    : structureNote
+      ? structureNote
+      : '(flow path unavailable — transitions not present in API response)'}
+
+NODE COUNTS:
+  entry events: ${events.length} | message actions: ${actions.length} (${channelSummary}) | conditions: ${conditions.length}
+${structureNote && !flowPath ? '  ' + structureNote : ''}
+
+ACTION NAMES:      ${actionNames.length ? actionNames.join(' | ') : 'none'}
+CONDITION NAMES:   ${conditionNames.length ? conditionNames.join(' | ') : 'none'}
+AUDIENCE SEGMENTS: ${audienceNames.length ? audienceNames.join(', ') : 'none detected'}
+AUDIENCE ID:       ${audienceId || 'none'}
+ENTRY TRIGGER:     ${triggerInfo || 'none / unknown'}
+
+BUSINESS SIGNALS:
+${businessSignals}
 ${rawNodeSection}
-SCORING CONTEXT:
-- Score 80-100 = strong candidate for retirement/archiving
-- Score 50-79  = uncertain, needs human review
-- Score 0-49   = likely active, keep for now
-- A journey with AJO default name + draft/stopped + 90+ days stale with 0 actions is almost certainly safe to retire
-- A journey with real audience checks, named conditions, multiple actions, and a descriptive name is likely paused for a reason even if stopped
-- Stopped journeys with full node structure (conditions, actions, audience checks) are NOT the same as abandoned/empty journeys
-- When structure data is empty (0 nodes), ALWAYS infer journeyType from the journey NAME and TAGS
-- Only use useCaseSummary = "Unable to determine use case" if the name is completely generic (e.g. "Journey1076") AND tags/description provide no context
+══════════════════════════════════════════════════════
+YOUR TASKS
+══════════════════════════════════════════════════════
+Work through these in order. Do NOT jump to retirement before completing Steps 1–2.
 
-TASK: Determine if this journey serves a real business purpose or is safe to retire.
-Consider ALL available signals: name, execution type, node structure, audience segments, condition names, action names, schedule, reentrance policy.
+STEP 1 — BUSINESS UNDERSTANDING:
+  What does this journey do? (use flow path, action names, condition names)
+  Who does it target? (use audience segments, entry trigger, condition logic)
+  What business process does it serve?
 
-Return ONLY valid JSON (no markdown fences, no explanation outside the JSON object):
+STEP 2 — OPERATIONAL STATUS:
+  Is it active, intentionally paused, or truly abandoned?
+  Is the staleness consistent with an intentional draft/pause or with abandonment?
+  (Hint: a journey with real structure and a "Delete" name is more likely an
+   intentional draft than a genuinely abandoned empty shell)
+
+STEP 3 — RECOMMENDATION:
+  Based on your answers to Steps 1 and 2, assign retirementScore and retirementLabel.
+  retirementScore: 0–49 = Keep Active, 50–79 = Review First, 80–100 = Safe to Retire
+
+Return ONLY valid JSON — no markdown fences, no text outside the JSON object:
 {
   "journeyType": "Welcome|Promotional|Transactional|Re-engagement|Abandoned Cart|Onboarding|Retention|Test/POC|Unknown",
-  "useCaseSummary": "Infer from name, condition names, audience segments, and action names what this journey does. Be specific.",
-  "targetAudience": "brief description of who this journey targets based on audience segments/conditions/name, or 'Unknown'",
+  "useCaseSummary": "What this journey does — inferred from flow path, action names, condition names, and audience. Be specific.",
+  "targetAudience": "Who this journey targets based on audience segments and condition logic, or 'Unknown'",
   "businessValue": "low|medium|high",
-  "hasBusinessPurpose": true or false,
-  "businessPurpose": "one sentence inferred from structure/name/context, or 'No identifiable business purpose'",
+  "businessPurpose": "One sentence describing the business process this journey serves, or 'No identifiable business purpose' only if Rule 5 conditions are fully met",
   "retirementScore": 0-100,
   "retirementLabel": "Safe to Retire|Review First|Keep Active",
   "confidence": 0-100,
-  "reasoning": "2-3 sentences explaining your verdict, referencing the specific signals you used (name, audience checks, condition logic, action count, status, staleness)",
+  "reasoning": "2-3 sentences explaining your verdict. Reference specific signals: flow structure, audience names, condition names, action types, status, staleness. Do not contradict your useCaseSummary.",
   "recommendation": "Archive|Review with owner|Keep|Contact owner before deleting"
 }`;
 }
