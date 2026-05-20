@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Journey Scoring — LangGraph Diagram</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 48px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #f8fafc;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 36px;
+      letter-spacing: 0.02em;
+    }
+
+    .graph-wrap {
+      width: 100%;
+      max-width: 860px;
+      background: #161b27;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 40px 20px 48px;
+      box-shadow: 0 8px 48px #00000088;
+      overflow-x: auto;
+    }
+
+    svg {
+      display: block;
+      margin: 0 auto;
+      overflow: visible;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      width: 100%;
+      max-width: 860px;
+      margin-top: 28px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 28px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.78rem;
+      color: #94a3b8;
+    }
+
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Detail cards ── */
+    .cards {
+      width: 100%;
+      max-width: 860px;
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      background: #1a2235;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+
+    .card-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      font-family: 'Courier New', monospace;
+      margin-bottom: 6px;
+    }
+
+    .card-body {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🕸️ Journey Scoring — LangGraph</h1>
+<p class="subtitle">ai-proxy/graph/journey-graph.js · StateGraph topology</p>
+
+<div class="graph-wrap">
+  <svg id="diagram" width="800" height="720" viewBox="0 0 800 720">
+    <defs>
+      <!-- Arrow markers -->
+      <marker id="arrow-default" markerWidth="10" markerHeight="7"
+              refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#475569" />
+      </marker>
+      <marker id="arrow-yes" markerWidth="10" markerHeight="7"
+              refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" />
+      </marker>
+      <marker id="arrow-no" markerWidth="10" markerHeight="7"
+              refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#f97316" />
+      </marker>
+      <marker id="arrow-retry" markerWidth="10" markerHeight="7"
+              refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#a855f7" />
+      </marker>
+      <marker id="arrow-end" markerWidth="10" markerHeight="7"
+              refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" />
+      </marker>
+
+      <!-- Glow filters -->
+      <filter id="glow-green" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="4" result="blur" />
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-blue" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="3" result="blur" />
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-purple" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="3" result="blur" />
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         NODES  (cx / cy = center)
+         Layout columns:  left=180  center=400  right=620
+         Y positions:     80  180  290  (branch) 400  510  620
+    ════════════════════════════════════════════════════════════ -->
+
+    <!-- __start__ (circle) -->
+    <circle cx="400" cy="68" r="26" fill="#1e293b" stroke="#22c55e" stroke-width="2.5"
+            filter="url(#glow-green)" />
+    <text x="400" y="63" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="700">__start__</text>
+    <text x="400" y="76" text-anchor="middle" fill="#22c55e" font-size="9">START</text>
+
+    <!-- enrich_journey -->
+    <g id="n-enrich">
+      <rect x="260" y="130" width="280" height="54" rx="10"
+            fill="#1e3a5f" stroke="#3b82f6" stroke-width="2" filter="url(#glow-blue)" />
+      <text x="400" y="152" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="700">enrich_journey</text>
+      <text x="400" y="170" text-anchor="middle" fill="#64748b" font-size="9.5">compute _daysStale, _isDefaultName, extract audiences</text>
+    </g>
+
+    <!-- Conditional diamond after enrich_journey -->
+    <g id="d-audience">
+      <polygon points="400,228  448,258  400,288  352,258" fill="#1a2540" stroke="#f59e0b" stroke-width="2" />
+      <text x="400" y="254" text-anchor="middle" fill="#fbbf24" font-size="9.5" font-weight="700">has audiences</text>
+      <text x="400" y="267" text-anchor="middle" fill="#fbbf24" font-size="9.5">+ token?</text>
+    </g>
+
+    <!-- resolve_audiences (left branch) -->
+    <g id="n-resolve">
+      <rect x="80" y="318" width="220" height="54" rx="10"
+            fill="#1a2e1a" stroke="#22c55e" stroke-width="2" />
+      <text x="190" y="340" text-anchor="middle" fill="#86efac" font-size="11" font-weight="700">resolve_audiences</text>
+      <text x="190" y="357" text-anchor="middle" fill="#64748b" font-size="9.5">Agent 1 — resolve audience defs via API</text>
+    </g>
+
+    <!-- skip_audiences (right branch) -->
+    <g id="n-skip">
+      <rect x="500" y="318" width="220" height="54" rx="10"
+            fill="#2a1f1a" stroke="#f97316" stroke-width="2" />
+      <text x="610" y="340" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="700">skip_audiences</text>
+      <text x="610" y="357" text-anchor="middle" fill="#64748b" font-size="9.5">bypass audience resolution</text>
+    </g>
+
+    <!-- score_journey -->
+    <g id="n-score">
+      <rect x="260" y="418" width="280" height="54" rx="10"
+            fill="#2a1a3e" stroke="#a855f7" stroke-width="2" filter="url(#glow-purple)" />
+      <text x="400" y="440" text-anchor="middle" fill="#d8b4fe" font-size="11" font-weight="700">score_journey</text>
+      <text x="400" y="458" text-anchor="middle" fill="#64748b" font-size="9.5">Agent 2 — build prompt + call Ollama LLM</text>
+    </g>
+
+    <!-- parse_result -->
+    <g id="n-parse">
+      <rect x="260" y="522" width="280" height="54" rx="10"
+            fill="#1e3a5f" stroke="#38bdf8" stroke-width="2" />
+      <text x="400" y="544" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">parse_result</text>
+      <text x="400" y="562" text-anchor="middle" fill="#64748b" font-size="9.5">extractJson · increment retryCount on failure</text>
+    </g>
+
+    <!-- Conditional diamond after parse_result -->
+    <g id="d-parse">
+      <polygon points="400,610  448,640  400,670  352,640" fill="#1a2540" stroke="#f59e0b" stroke-width="2" />
+      <text x="400" y="637" text-anchor="middle" fill="#fbbf24" font-size="9.5" font-weight="700">parsed OK?</text>
+      <text x="400" y="650" text-anchor="middle" fill="#fbbf24" font-size="9">/ retryCount?</text>
+    </g>
+
+    <!-- __end__ -->
+    <circle cx="400" cy="706" r="22" fill="#1e293b" stroke="#22c55e" stroke-width="2.5"
+            filter="url(#glow-green)" />
+    <text x="400" y="701" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="700">__end__</text>
+    <text x="400" y="714" text-anchor="middle" fill="#22c55e" font-size="9">END</text>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         EDGES
+    ════════════════════════════════════════════════════════════ -->
+
+    <!-- START → enrich_journey -->
+    <line x1="400" y1="94" x2="400" y2="128"
+          stroke="#475569" stroke-width="2" marker-end="url(#arrow-default)" />
+
+    <!-- enrich_journey → diamond -->
+    <line x1="400" y1="184" x2="400" y2="226"
+          stroke="#475569" stroke-width="2" marker-end="url(#arrow-default)" />
+
+    <!-- diamond → resolve_audiences (YES / left) -->
+    <path d="M 352,258 L 190,258 L 190,316"
+          fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3"
+          marker-end="url(#arrow-yes)" />
+    <text x="268" y="251" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">YES — has audiences + token</text>
+
+    <!-- diamond → skip_audiences (NO / right) -->
+    <path d="M 448,258 L 610,258 L 610,316"
+          fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="6,3"
+          marker-end="url(#arrow-no)" />
+    <text x="535" y="251" text-anchor="middle" fill="#f97316" font-size="9" font-weight="600">NO — skip</text>
+
+    <!-- resolve_audiences → score_journey -->
+    <path d="M 190,372 L 190,444 L 258,444"
+          fill="none" stroke="#475569" stroke-width="2"
+          marker-end="url(#arrow-default)" />
+
+    <!-- skip_audiences → score_journey -->
+    <path d="M 610,372 L 610,444 L 542,444"
+          fill="none" stroke="#475569" stroke-width="2"
+          marker-end="url(#arrow-default)" />
+
+    <!-- score_journey → parse_result -->
+    <line x1="400" y1="472" x2="400" y2="520"
+          stroke="#475569" stroke-width="2" marker-end="url(#arrow-default)" />
+
+    <!-- parse_result → diamond -->
+    <line x1="400" y1="576" x2="400" y2="608"
+          stroke="#475569" stroke-width="2" marker-end="url(#arrow-default)" />
+
+    <!-- diamond → __end__ (parsed OK) -->
+    <line x1="400" y1="670" x2="400" y2="682"
+          stroke="#22c55e" stroke-width="2" marker-end="url(#arrow-yes)" />
+    <text x="415" y="680" fill="#22c55e" font-size="8.5" font-weight="600">OK</text>
+
+    <!-- diamond → __end__ (max retries, curved right) -->
+    <path d="M 448,640 Q 700,640 700,706 Q 700,706 424,706"
+          fill="none" stroke="#ef4444" stroke-width="2" stroke-dasharray="5,3"
+          marker-end="url(#arrow-end)" />
+    <text x="625" y="696" text-anchor="middle" fill="#ef4444" font-size="8.5" font-weight="600">retryCount ≥ 2 (failed)</text>
+
+    <!-- diamond → score_journey RETRY LOOP (left arc) -->
+    <path d="M 352,640 Q 80,640 80,445 Q 80,418 258,432"
+          fill="none" stroke="#a855f7" stroke-width="2" stroke-dasharray="7,3"
+          marker-end="url(#arrow-retry)" />
+    <text x="108" y="530" fill="#a855f7" font-size="8.5" font-weight="600" transform="rotate(-90,108,530)">retry (count &lt; 2)</text>
+
+  </svg>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item">
+    <svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#1e293b" stroke="#22c55e" stroke-width="2"/></svg>
+    Start / End node
+  </div>
+  <div class="legend-item">
+    <svg width="14" height="14"><rect width="14" height="14" rx="3" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/></svg>
+    Processing node (blue)
+  </div>
+  <div class="legend-item">
+    <svg width="14" height="14"><rect width="14" height="14" rx="3" fill="#1a2e1a" stroke="#22c55e" stroke-width="2"/></svg>
+    Agent 1 — resolve_audiences
+  </div>
+  <div class="legend-item">
+    <svg width="14" height="14"><rect width="14" height="14" rx="3" fill="#2a1a3e" stroke="#a855f7" stroke-width="2"/></svg>
+    Agent 2 — score_journey (LLM)
+  </div>
+  <div class="legend-item">
+    <svg width="14" height="14"><polygon points="7,1 13,7 7,13 1,7" fill="#1a2540" stroke="#f59e0b" stroke-width="2"/></svg>
+    Conditional routing diamond
+  </div>
+  <div class="legend-item">
+    <svg width="28" height="14"><line x1="0" y1="7" x2="20" y2="7" stroke="#a855f7" stroke-width="2" stroke-dasharray="4,2"/><polygon points="20,4 28,7 20,10" fill="#a855f7"/></svg>
+    Retry loop edge
+  </div>
+  <div class="legend-item">
+    <svg width="28" height="14"><line x1="0" y1="7" x2="20" y2="7" stroke="#ef4444" stroke-width="2" stroke-dasharray="4,2"/><polygon points="20,4 28,7 20,10" fill="#ef4444"/></svg>
+    Max retries exhausted → END
+  </div>
+</div>
+
+<!-- Detail cards -->
+<div class="cards">
+  <div class="card">
+    <div class="card-title" style="color:#86efac;">enrich_journey</div>
+    <div class="card-body">Computes <code>_daysStale</code> and <code>_isDefaultName</code> flags; extracts audience IDs from the journey payload. Decides whether audience resolution is needed.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#22c55e;">resolve_audiences</div>
+    <div class="card-body"><strong>Agent 1.</strong> Calls the AJO Audience API to fetch human-readable audience definitions. Requires <code>ajo_token</code> and audience IDs in state.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#fdba74;">skip_audiences</div>
+    <div class="card-body">No-op pass-through when journey has no audiences or no API token is available. Merges back into the main flow before scoring.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#d8b4fe;">score_journey</div>
+    <div class="card-body"><strong>Agent 2.</strong> Builds a structured prompt from enriched journey data and calls the Ollama LLM to produce a scored JSON recommendation.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#7dd3fc;">parse_result</div>
+    <div class="card-body">Extracts JSON from raw LLM output. On failure increments <code>retryCount</code>. Routes back to <em>score_journey</em> if retries remain (max 2), otherwise terminates.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#fbbf24;">Conditional Edges</div>
+    <div class="card-body">
+      <strong>routeAudienceResolution</strong> — after enrich<br/>
+      <strong>routeAfterParse</strong> — after parse<br/>
+      Defined in <code>graph/edges.js</code>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
