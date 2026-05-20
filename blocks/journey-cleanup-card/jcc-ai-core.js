@@ -48,7 +48,7 @@ export function computeRuleScore(journey) {
   if (version <= 1) { score += 8; signals.push({ label: 'Version 1 (never iterated)', points: 8, type: 'ok' }); }
 
   const s = Math.min(100, score);
-  const label = s >= 80 ? 'Safe to Retire' : s >= 50 ? 'Review First' : 'Likely Active';
+  const label = s >= 80 ? 'Safe to Delete' : s >= 50 ? 'Review First' : 'Likely Active';
   const color = s >= 80 ? 'red' : s >= 50 ? 'yellow' : 'green';
   return { score: s, signals, label, color };
 }

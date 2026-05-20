@@ -540,7 +540,7 @@ function buildCsv(data, cfg, aiScores) {
     'Created By', 'Created At', 'Last Modified By', 'Last Modified At', 'Days Stale',
     'Rule Score', 'AI Score (Blended)', 'AI Verdict',
     'Journey Type', 'Use Case Summary', 'Target Audience',
-    'Business Value', 'Has Business Purpose', 'Business Purpose',
+    'Business Value', 'Business Purpose',
     'AI Reasoning', 'Recommendation', 'AI Confidence',
     'AJO URL',
   ];
@@ -552,18 +552,17 @@ function buildCsv(data, cfg, aiScores) {
     const blended = (rule && llm) ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
       : (rule ? rule.score : '');
     return [
-      j.id, j.name, j.status, j.version, j.sandboxName,
+      j.id, j.name, statusLabel(j.status), j.version, j.sandboxName,
       j.metadata?.createdBy, j.metadata?.createdAt,
       j.metadata?.lastModifiedBy, j.metadata?.lastModifiedAt,
       daysAgo(j.metadata?.lastModifiedAt),
       ruleScore,
       blended,
-      llm ? llm.retirementLabel : (rule ? (rule.score >= 80 ? 'Safe to Retire' : rule.score >= 50 ? 'Review First' : 'Keep Active') : ''),
+      llm ? llm.retirementLabel : (rule ? (rule.score >= 80 ? 'Safe to Delete' : rule.score >= 50 ? 'Review First' : 'Keep Active') : ''),
       llm ? llm.journeyType : '',
       llm ? llm.useCaseSummary : '',
       llm ? llm.targetAudience : '',
       llm ? llm.businessValue : '',
-      llm ? String(llm.hasBusinessPurpose) : '',
       llm ? llm.businessPurpose : '',
       llm ? llm.reasoning : '',
       llm ? llm.recommendation : '',
@@ -725,7 +724,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     // AI counts row
     '  <div class="jcc-ai-counts" id="jcc-ai-counts" style="display:none">',
     '    <span class="jcc-ai-counts-lbl">Filter:</span>',
-    '    <button class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire" data-cat="retire" title="Show only Retire journeys">&#x1F534; 0 Retire</button>',
+    '    <button class="jcc-ai-cnt jcc-ai-cnt-retire" id="jcc-ai-retire" data-cat="retire" title="Show only Delete journeys">&#x1F534; 0 Delete</button>',
     '    <button class="jcc-ai-cnt jcc-ai-cnt-review" id="jcc-ai-review" data-cat="review" title="Show only Review journeys">&#x1F7E1; 0 Review</button>',
     '    <button class="jcc-ai-cnt jcc-ai-cnt-keep"   id="jcc-ai-keep"   data-cat="keep"   title="Show only Keep journeys">&#x1F7E2; 0 Keep</button>',
     '    <button class="jcc-ai-cnt jcc-ai-cnt-all" id="jcc-ai-all" data-cat="all" title="Show all journeys">&#x26AA; All</button>',
@@ -777,7 +776,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '  </div>',
     '  <div class="jcc-filter-row">',
     '    <div class="jcc-fg"><label for="jcc-sf">Status</label>',
-    '      <select id="jcc-sf" class="jcc-sel"><option value="all">All</option><option value="draft">Draft</option><option value="failed">Failed</option><option value="finished">Finished</option><option value="stopped">Stopped</option></select>',
+    '      <select id="jcc-sf" class="jcc-sel"><option value="all">All</option><option value="draft">Draft</option><option value="live">Live</option><option value="failed">Failed</option><option value="finished">Finished</option><option value="stopped">Stopped</option></select>',
     '    </div>',
     '    <div class="jcc-fg"><label for="jcc-cb">Owner</label>',
     '      <select id="jcc-cb" class="jcc-sel"><option value="all">All Owners</option></select>',
@@ -785,7 +784,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '    <div class="jcc-fg" id="jcc-ai-cat-fg" style="display:none"><label for="jcc-ai-cat">AI Category</label>',
     '      <select id="jcc-ai-cat" class="jcc-sel">',
     '        <option value="all">All</option>',
-    '        <option value="retire">\uD83D\uDD34 Retire</option>',
+    '        <option value="retire">\uD83D\uDD34 Delete</option>',
     '        <option value="review">\uD83D\uDFE1 Review</option>',
     '        <option value="keep">\uD83D\uDFE2 Keep</option>',
     '      </select>',
@@ -873,7 +872,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   function updOwnerFilter() {
     const co = cutoff();
-    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co && (j.status || '').toLowerCase() !== 'deployed');
+    const stale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
     const names = [...new Set(stale.map((j) => j.metadata?.createdBy || '').filter(Boolean))].sort();
     const prev = cbEl.value;
     cbEl.innerHTML = '<option value="all">All Owners</option>' + names.map((n) => `<option value="${esc(n)}"${n === prev ? ' selected' : ''}>${esc(n)}</option>`).join('');
@@ -917,11 +916,17 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     const q = nameQ.toLowerCase();
     filtered = all.filter((j) => {
       if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
-      if ((j.status || '').toLowerCase() === 'deployed') return false;
       if (statusQ !== 'all') {
         const apiStatus = (j.status || '').toLowerCase();
         // 'finished' filter value matches both 'closed' and 'finished' API statuses
-        if (statusQ === 'finished' ? (apiStatus !== 'closed' && apiStatus !== 'finished') : apiStatus !== statusQ) return false;
+        // 'live' filter value matches both 'live' and 'deployed' API statuses
+        if (statusQ === 'finished') {
+          if (apiStatus !== 'closed' && apiStatus !== 'finished') return false;
+        } else if (statusQ === 'live') {
+          if (apiStatus !== 'live' && apiStatus !== 'deployed') return false;
+        } else if (apiStatus !== statusQ) {
+          return false;
+        }
       }
       if (createdByQ !== 'all' && (j.metadata?.createdBy || '') !== createdByQ) return false;
       if (bucketQ !== 'all' && getBucket(daysAgo(j.metadata?.lastModifiedAt)) !== bucketQ) return false;
@@ -1052,7 +1057,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           } else if (aiEntry) {
             const cat = getAiCategory(j.id);
             const catMap = {
-              retire: { cls: 'jcc-verdict-pill-retire', icon: '\uD83D\uDD34', lbl: 'Retire' },
+              retire: { cls: 'jcc-verdict-pill-retire', icon: '\uD83D\uDD34', lbl: 'Delete' },
               review: { cls: 'jcc-verdict-pill-review', icon: '\uD83D\uDFE1', lbl: 'Review' },
               keep:   { cls: 'jcc-verdict-pill-keep',   icon: '\uD83D\uDFE2', lbl: 'Keep'   },
             };
@@ -1243,7 +1248,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           : '';
 
         aiPl.textContent = `\uD83E\uDD16 LLM: ${done}/${total} journeys scored${timeParts}`;
-        dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retireCount} Retire`;
+        dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retireCount} Delete`;
         dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${reviewCount} Review`;
         dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keepCount} Keep`;
       },
@@ -1383,7 +1388,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   dash.querySelector('#jr-csv').addEventListener('click', () => triggerDownload(buildCsv(filtered, cfg, aiScores), `journey-cleanup-filtered-${todayIso()}.csv`));
   dash.querySelector('#jr-csv-all').addEventListener('click', () => {
     const co = cutoff();
-    const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co && (j.status || '').toLowerCase() !== 'deployed');
+    const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
     triggerDownload(buildCsv(allStale, cfg, aiScores), `journey-cleanup-all-${todayIso()}.csv`);
   });
   dash.querySelector('#jr-reconfig').addEventListener('click', () => { showModal((nc) => showDashboard(root, nc)); });
@@ -1472,7 +1477,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
             else keep += 1;
           });
           aiCountsEl.style.display = 'flex';
-          dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retire} Retire`;
+          dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retire} Delete`;
           dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${review} Review`;
           dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keep} Keep`;
           aiPf.style.width = '100%';
