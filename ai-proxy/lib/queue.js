@@ -56,7 +56,6 @@ async function callOllama(prompt, journeyId) {
   const start      = Date.now();
 
   log('debug', '🦙 Ollama → sending prompt', { journeyId, model: MODEL, prompt_chars: prompt.length });
-  log('info',  '🦙 Ollama prompt text', { journeyId, prompt });
 
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/generate`, {

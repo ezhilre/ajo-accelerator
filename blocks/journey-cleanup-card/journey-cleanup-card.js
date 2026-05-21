@@ -1175,14 +1175,20 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
           if (pending) {
             verdictCell = '<span class="jcc-ai-analyzing" style="font-size:0.72rem">\u23F3</span>';
           } else if (aiEntry) {
-            const cat = getAiCategory(j.id);
-            const catMap = {
-              retire: { cls: 'jcc-verdict-pill-retire', icon: '\uD83D\uDD34', lbl: 'Delete' },
-              review: { cls: 'jcc-verdict-pill-review', icon: '\uD83D\uDFE1', lbl: 'Review' },
-              keep:   { cls: 'jcc-verdict-pill-keep',   icon: '\uD83D\uDFE2', lbl: 'Keep'   },
-            };
-            const cv = cat ? catMap[cat] : catMap.keep;
-            verdictCell = `<span class="jcc-verdict-pill ${cv.cls}">${cv.icon} ${cv.lbl}</span>`;
+            if (aiEntry.llm && !aiEntry.llm.error) {
+              // LLM result available — show full AI verdict with color
+              const cat = getAiCategory(j.id);
+              const catMap = {
+                retire: { cls: 'jcc-verdict-pill-retire', icon: '\uD83D\uDD34', lbl: 'Delete' },
+                review: { cls: 'jcc-verdict-pill-review', icon: '\uD83D\uDFE1', lbl: 'Review' },
+                keep:   { cls: 'jcc-verdict-pill-keep',   icon: '\uD83D\uDFE2', lbl: 'Keep'   },
+              };
+              const cv = cat ? catMap[cat] : catMap.keep;
+              verdictCell = `<span class="jcc-verdict-pill ${cv.cls}">${cv.icon} ${cv.lbl}</span>`;
+            } else {
+              // Rule score only — show neutral "Tool Verdict" pill
+              verdictCell = '<span class="jcc-verdict-pill jcc-verdict-pill-tool">\u2699\uFE0F Tool Verdict</span>';
+            }
           } else {
             verdictCell = '<span class="jcc-verdict-pill-empty">\u2014</span>';
           }

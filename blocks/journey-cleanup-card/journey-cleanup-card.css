@@ -1349,6 +1349,7 @@ a.jcc-go-btn:active,
 .jcc-verdict-pill-retire { background: #fce5e7; color: #c9252d; border-color: #f4b8bb; }
 .jcc-verdict-pill-review { background: #fce7c0; color: #a85900; border-color: #f4d48a; }
 .jcc-verdict-pill-keep   { background: #cef5e7; color: #0d7055; border-color: #a0dfc6; }
+.jcc-verdict-pill-tool   { background: #f0f0f0; color: #6e6e6e; border-color: #d0d0d0; font-style: italic; }
 
 .jcc-verdict-pill-empty  { color: #b3b3b3; font-size: 0.82rem; }
 
