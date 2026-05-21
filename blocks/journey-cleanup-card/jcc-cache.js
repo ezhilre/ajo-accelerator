@@ -14,6 +14,7 @@ const DB_NAME = 'jcc_dashboard';
 const DB_VERSION = 1;
 const STORE = 'snapshots';
 const STALE_DAYS = 90;
+const MAX_SANDBOXES = 5;
 
 // ── open / init DB ────────────────────────────────────────────────────────────
 
@@ -45,11 +46,18 @@ function openDb() {
  */
 export async function saveSnapshot(sandbox, journeys, aiScores) {
   const db = await openDb();
+
+  // Enforce MAX_SANDBOXES limit: if we are about to add a NEW sandbox and are at capacity,
+  // evict the least-recently-accessed sandbox first.
+  await _enforceLimit(db, sandbox);
+
   const scoresObj = {};
   aiScores.forEach((v, k) => { scoresObj[k] = v; });
+  const now = new Date().toISOString();
   const record = {
     sandbox,
-    analyzedAt: new Date().toISOString(),
+    analyzedAt: now,
+    accessedAt: now,
     journeyCount: journeys.length,
     aiScoredCount: [...aiScores.values()].filter((e) => e.llm).length,
     journeys,
@@ -60,6 +68,38 @@ export async function saveSnapshot(sandbox, journeys, aiScores) {
     tx.objectStore(STORE).put(record);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Enforce the MAX_SANDBOXES cap.  If the incoming sandbox is already stored,
+ * no eviction is needed.  If it's new and the store is full, the sandbox with
+ * the oldest `accessedAt` timestamp is deleted first.
+ * @param {IDBDatabase} db
+ * @param {string} incomingSandbox
+ * @returns {Promise<void>}
+ */
+async function _enforceLimit(db, incomingSandbox) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = req.result || [];
+      // If sandbox already exists or we're under the cap, nothing to do
+      const alreadyExists = all.some((r) => r.sandbox === incomingSandbox);
+      if (alreadyExists || all.length < MAX_SANDBOXES) { resolve(); return; }
+
+      // Sort by accessedAt ascending (oldest first) and evict the oldest
+      const sorted = [...all].sort((a, b) => {
+        const ta = a.accessedAt || a.analyzedAt || '';
+        const tb = b.accessedAt || b.analyzedAt || '';
+        return ta < tb ? -1 : ta > tb ? 1 : 0;
+      });
+      store.delete(sorted[0].sandbox);
+      resolve();
+    };
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -80,11 +120,15 @@ export async function saveSnapshot(sandbox, journeys, aiScores) {
 export async function loadSnapshot(sandbox) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).get(sandbox);
+    const tx = db.transaction(STORE, 'readwrite'); // readwrite so we can touch accessedAt
+    const store = tx.objectStore(STORE);
+    const req = store.get(sandbox);
     req.onsuccess = () => {
       const record = req.result;
       if (!record) { resolve(null); return; }
+      // Update accessedAt to mark this sandbox as recently used (LRU)
+      record.accessedAt = new Date().toISOString();
+      store.put(record);
       const daysOld = Math.floor((Date.now() - new Date(record.analyzedAt).getTime()) / 86400000);
       resolve({ ...record, daysOld, isStale: daysOld >= STALE_DAYS });
     };
@@ -118,14 +162,32 @@ export async function listSnapshots() {
     const req = tx.objectStore(STORE).getAll();
     req.onsuccess = () => {
       const now = Date.now();
-      const list = (req.result || []).map(({ sandbox, analyzedAt, journeyCount, aiScoredCount }) => {
+      const list = (req.result || []).map(({ sandbox, analyzedAt, accessedAt, journeyCount, aiScoredCount }) => {
         const daysOld = Math.floor((now - new Date(analyzedAt).getTime()) / 86400000);
-        return { sandbox, analyzedAt, journeyCount, aiScoredCount, daysOld, isStale: daysOld >= STALE_DAYS };
+        return {
+          sandbox, analyzedAt, accessedAt, journeyCount, aiScoredCount,
+          daysOld, isStale: daysOld >= STALE_DAYS,
+        };
+      });
+      // Sort by most recently accessed first
+      list.sort((a, b) => {
+        const ta = a.accessedAt || a.analyzedAt || '';
+        const tb = b.accessedAt || b.analyzedAt || '';
+        return ta > tb ? -1 : ta < tb ? 1 : 0;
       });
       resolve(list);
     };
     req.onerror = () => reject(req.error);
   });
+}
+
+/**
+ * Returns the number of cached sandboxes and the max allowed.
+ * @returns {Promise<{count: number, max: number}>}
+ */
+export async function getCacheCapacity() {
+  const list = await listSnapshots();
+  return { count: list.length, max: MAX_SANDBOXES };
 }
 
 /**

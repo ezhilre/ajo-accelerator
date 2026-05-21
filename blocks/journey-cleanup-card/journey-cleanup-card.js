@@ -7,7 +7,7 @@ import {
   fetchJourneyDetail, scoreSingleLLM,
 } from './jcc-ai-core.js';
 import {
-  saveSnapshot, loadSnapshot, clearSnapshot,
+  saveSnapshot, loadSnapshot, clearSnapshot, listSnapshots, getCacheCapacity,
   hydrateScores, fmtSnapshotDate,
 } from './jcc-cache.js';
 
@@ -580,37 +580,129 @@ function triggerDownload(csv, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
-// ─── cache banner (shown when a snapshot exists) ─────────────────────────────
+// ─── cache banner (shown when snapshots exist) ────────────────────────────────
+// Shows all cached sandboxes as switchable cards (max 5). The active sandbox
+// (cfg.sandbox) is highlighted. Clicking another sandbox card switches to it.
 
 function showCacheBanner(root, snap, cfg) {
   return new Promise((resolve) => {
     root.innerHTML = '';
-    const el = document.createElement('div');
-    el.className = 'jcc-cache-banner';
-    const staleBadge = snap.isStale
-      ? `<span class="jcc-cb-stale-badge">\u26A0 ${snap.daysOld} days old \u2014 consider refreshing</span>`
-      : `<span class="jcc-cb-fresh-badge">\u2705 ${snap.daysOld} days old</span>`;
-    el.innerHTML = `
-      <div class="jcc-cb-icon">\uD83D\uDCE6</div>
-      <div class="jcc-cb-info${snap.isStale ? ' jcc-cb-stale' : ''}">
-        <div class="jcc-cb-title">Cached snapshot available \u2014 <strong>${esc(cfg.sandbox)}</strong></div>
-        <div class="jcc-cb-meta">
-          Analyzed: <strong>${fmtSnapshotDate(snap.analyzedAt)}</strong>
-          &nbsp;\u00B7&nbsp; ${snap.journeyCount} journeys
-          &nbsp;\u00B7&nbsp; ${snap.aiScoredCount} AI-scored
-          &nbsp;&nbsp;${staleBadge}
+
+    // Load full list of sandboxes from IndexedDB, then build the UI
+    listSnapshots().then((allSnaps) => {
+      const el = document.createElement('div');
+      el.className = 'jcc-cache-banner';
+
+      // ── Sandbox switcher tabs ─────────────────────────────────────────────
+      const capacity = allSnaps.length;
+      const maxSandboxes = 5;
+      let tabsHtml = `
+        <div class="jcc-cb-switcher-hdr">
+          <span class="jcc-cb-sw-title">\uD83D\uDCE6 Cached Sandboxes</span>
+          <span class="jcc-cb-sw-cap">${capacity} / ${maxSandboxes}</span>
         </div>
-      </div>
-      <div class="jcc-cb-actions">
-        <button class="jcc-btn-primary jcc-cb-load">\u26A1 Load from cache</button>
-        <button class="jcc-btn-secondary jcc-cb-fresh">\uD83D\uDD04 Run fresh analysis</button>
-        <button class="jcc-btn-sec jcc-cb-clear">\uD83D\uDDD1 Clear cache</button>
-      </div>
-    `;
-    root.appendChild(el);
-    el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve('cache'));
-    el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve('fresh'));
-    el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve('clear'));
+        <div class="jcc-cb-tabs">
+      `;
+      allSnaps.forEach((s) => {
+        const isActive = s.sandbox === cfg.sandbox;
+        const staleIcon = s.isStale ? '\u26A0\uFE0F' : '\u2705';
+        tabsHtml += `
+          <button class="jcc-cb-tab${isActive ? ' jcc-cb-tab-active' : ''}" data-sandbox="${esc(s.sandbox)}">
+            <span class="jcc-cb-tab-name">${esc(s.sandbox)}</span>
+            <span class="jcc-cb-tab-meta">${staleIcon} ${s.journeyCount} journeys &middot; ${s.daysOld}d old</span>
+          </button>
+        `;
+      });
+      tabsHtml += '</div>';
+
+      // ── Active sandbox detail panel ───────────────────────────────────────
+      const staleBadge = snap.isStale
+        ? `<span class="jcc-cb-stale-badge">\u26A0 ${snap.daysOld} days old \u2014 consider refreshing</span>`
+        : `<span class="jcc-cb-fresh-badge">\u2705 ${snap.daysOld} days old</span>`;
+
+      const detailHtml = `
+        <div class="jcc-cb-detail">
+          <div class="jcc-cb-info${snap.isStale ? ' jcc-cb-stale' : ''}">
+            <div class="jcc-cb-title">Snapshot \u2014 <strong>${esc(cfg.sandbox)}</strong></div>
+            <div class="jcc-cb-meta">
+              Analyzed: <strong>${fmtSnapshotDate(snap.analyzedAt)}</strong>
+              &nbsp;\u00B7&nbsp; ${snap.journeyCount} journeys
+              &nbsp;\u00B7&nbsp; ${snap.aiScoredCount} AI-scored
+              &nbsp;&nbsp;${staleBadge}
+            </div>
+          </div>
+          <div class="jcc-cb-actions">
+            <button class="jcc-btn-primary jcc-cb-load">\u26A1 Load from cache</button>
+            <button class="jcc-btn-secondary jcc-cb-fresh">\uD83D\uDD04 Run fresh analysis</button>
+            <button class="jcc-btn-sec jcc-cb-clear">\uD83D\uDDD1 Clear cache</button>
+          </div>
+        </div>
+      `;
+
+      el.innerHTML = tabsHtml + detailHtml;
+      root.appendChild(el);
+
+      // ── Tab click → switch sandbox ────────────────────────────────────────
+      el.querySelectorAll('.jcc-cb-tab').forEach((tab) => {
+        tab.addEventListener('click', async () => {
+          const targetSandbox = tab.dataset.sandbox;
+          if (targetSandbox === cfg.sandbox) return; // already active
+
+          // Update cfg to target sandbox (inherit credentials — same org/token)
+          const newCfg = { ...cfg, sandbox: targetSandbox };
+
+          // Load snapshot for the switched-to sandbox
+          let targetSnap = null;
+          try { targetSnap = await loadSnapshot(targetSandbox); } catch (_) { /* ignore */ }
+
+          if (targetSnap) {
+            // Re-render the cache banner for the new sandbox, then resolve as 'switch'
+            showCacheBanner(root, targetSnap, newCfg).then((choice) => {
+              // Propagate the choice with the updated cfg
+              if (choice === 'cache') resolve({ action: 'cache', cfg: newCfg, snap: targetSnap });
+              else if (choice === 'fresh') resolve({ action: 'fresh', cfg: newCfg });
+              else if (choice === 'clear') resolve({ action: 'clear', cfg: newCfg });
+              else if (choice && typeof choice === 'object') resolve(choice);
+            });
+          } else {
+            // No cache for that sandbox — go straight to fresh analysis
+            resolve({ action: 'fresh', cfg: newCfg });
+          }
+        });
+      });
+
+      el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve({ action: 'cache', cfg, snap }));
+      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'fresh', cfg }));
+      el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve({ action: 'clear', cfg }));
+    }).catch(() => {
+      // Fallback: IndexedDB unavailable — show simple banner
+      const el = document.createElement('div');
+      el.className = 'jcc-cache-banner';
+      const staleBadge = snap.isStale
+        ? `<span class="jcc-cb-stale-badge">\u26A0 ${snap.daysOld} days old \u2014 consider refreshing</span>`
+        : `<span class="jcc-cb-fresh-badge">\u2705 ${snap.daysOld} days old</span>`;
+      el.innerHTML = `
+        <div class="jcc-cb-icon">\uD83D\uDCE6</div>
+        <div class="jcc-cb-info${snap.isStale ? ' jcc-cb-stale' : ''}">
+          <div class="jcc-cb-title">Cached snapshot \u2014 <strong>${esc(cfg.sandbox)}</strong></div>
+          <div class="jcc-cb-meta">
+            Analyzed: <strong>${fmtSnapshotDate(snap.analyzedAt)}</strong>
+            &nbsp;\u00B7&nbsp; ${snap.journeyCount} journeys
+            &nbsp;\u00B7&nbsp; ${snap.aiScoredCount} AI-scored
+            &nbsp;&nbsp;${staleBadge}
+          </div>
+        </div>
+        <div class="jcc-cb-actions">
+          <button class="jcc-btn-primary jcc-cb-load">\u26A1 Load from cache</button>
+          <button class="jcc-btn-secondary jcc-cb-fresh">\uD83D\uDD04 Run fresh analysis</button>
+          <button class="jcc-btn-sec jcc-cb-clear">\uD83D\uDDD1 Clear cache</button>
+        </div>
+      `;
+      root.appendChild(el);
+      el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve({ action: 'cache', cfg, snap }));
+      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'fresh', cfg }));
+      el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve({ action: 'clear', cfg }));
+    });
   });
 }
 
@@ -621,17 +713,45 @@ async function showDashboard(root, cfg) {
   let cachedSnap = null;
   try { cachedSnap = await loadSnapshot(cfg.sandbox); } catch (_) { /* ignore IDB errors */ }
 
-  if (cachedSnap) {
-    const choice = await showCacheBanner(root, cachedSnap, cfg);
-    if (choice === 'cache') {
-      const restoredScores = hydrateScores(cachedSnap.aiScores);
-      showDashboardCore(root, cfg, cachedSnap.journeys, restoredScores, cachedSnap);
+  // Also check whether any OTHER sandboxes are cached — if so, always show the switcher
+  let otherSnaps = [];
+  try { otherSnaps = await listSnapshots(); } catch (_) { /* ignore */ }
+  const hasAnyCached = cachedSnap || otherSnaps.length > 0;
+
+  if (hasAnyCached) {
+    // If current sandbox has no snapshot, create a synthetic placeholder so the banner
+    // can still show the switcher tabs for other sandboxes
+    const snapForBanner = cachedSnap || {
+      sandbox: cfg.sandbox,
+      analyzedAt: null,
+      accessedAt: null,
+      journeyCount: 0,
+      aiScoredCount: 0,
+      daysOld: 0,
+      isStale: false,
+      journeys: [],
+      aiScores: {},
+      _noCache: true,
+    };
+
+    const result = await showCacheBanner(root, snapForBanner, cfg);
+
+    // Normalise: banner now always returns an object {action, cfg, snap?}
+    const action = typeof result === 'object' ? result.action : result;
+    const resolvedCfg = (typeof result === 'object' && result.cfg) ? result.cfg : cfg;
+    const resolvedSnap = (typeof result === 'object' && result.snap) ? result.snap : cachedSnap;
+
+    if (action === 'cache' && resolvedSnap && !resolvedSnap._noCache) {
+      const restoredScores = hydrateScores(resolvedSnap.aiScores);
+      showDashboardCore(root, resolvedCfg, resolvedSnap.journeys, restoredScores, resolvedSnap);
       return;
     }
-    if (choice === 'clear') {
-      try { await clearSnapshot(cfg.sandbox); } catch (_) { /* ignore */ }
+    if (action === 'clear') {
+      try { await clearSnapshot(resolvedCfg.sandbox); } catch (_) { /* ignore */ }
     }
-    // 'fresh' falls through
+    // 'fresh' or no-cache: fall through to live fetch with the (possibly switched) cfg
+    showDashboardCore(root, resolvedCfg, null, null, null);
+    return;
   }
 
   showDashboardCore(root, cfg, null, null, null);

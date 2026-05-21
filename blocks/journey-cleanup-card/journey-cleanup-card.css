@@ -1736,79 +1736,139 @@ a.jcc-go-btn:active,
   border-top: 1px solid #f4b8bb;
 }
 
-/* ── Cache banner (pre-dashboard choice screen) ─────────────────────────── */
+/* ── Cache banner + Sandbox switcher tabs (pre-dashboard choice screen) ─── */
 
 .jcc-cache-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: linear-gradient(135deg, #f0f6ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 0;
+  margin: 1.5rem auto;
+  max-width: 920px;
+  box-shadow: 0 2px 10px rgba(20, 115, 230, 0.08);
+  overflow: hidden;
+}
+
+/* Switcher header row */
+.jcc-cb-switcher-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1.25rem 0.4rem;
+  border-bottom: 1px solid #dde5ff;
+}
+
+.jcc-cb-sw-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4b4b4b;
+}
+
+.jcc-cb-sw-cap {
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: #7e5fcf;
+  background: #ebe8ff;
+  border: 1px solid #c9b8ff;
+  border-radius: 10px;
+  padding: 0.1rem 0.55rem;
+  white-space: nowrap;
+}
+
+/* Scrollable tabs row */
+.jcc-cb-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem 0.65rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c9d8ff transparent;
+}
+
+.jcc-cb-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.jcc-cb-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.jcc-cb-tabs::-webkit-scrollbar-thumb {
+  background: #c9d8ff;
+  border-radius: 2px;
+}
+
+/* Individual sandbox tab button */
+.jcc-cb-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  background: #fff;
+  border: 1.5px solid #c9d8ff;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 140px;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.jcc-cb-tab:hover:not(.jcc-cb-tab-active) {
+  border-color: #1473e6;
+  background: #ebf0ff;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 10px rgba(20, 115, 230, 0.12);
+}
+
+.jcc-cb-tab-active {
+  background: #1473e6;
+  border-color: #1473e6;
+  box-shadow: 0 3px 10px rgba(20, 115, 230, 0.28);
+  cursor: default;
+}
+
+.jcc-cb-tab-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.jcc-cb-tab-active .jcc-cb-tab-name {
+  color: #fff;
+}
+
+.jcc-cb-tab-meta {
+  font-size: 0.7rem;
+  color: #6e6e6e;
+  font-weight: 500;
+}
+
+.jcc-cb-tab-active .jcc-cb-tab-meta {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* Active sandbox detail panel (bottom of cache banner) */
+.jcc-cb-detail {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 1rem;
-  background: linear-gradient(135deg, #f0f6ff 0%, #f5f0ff 100%);
-  border: 1px solid #c9d8ff;
-  border-radius: 10px;
-  padding: 1.25rem 1.5rem;
-  margin: 1.5rem auto;
-  max-width: 860px;
-  box-shadow: 0 2px 10px rgba(20, 115, 230, 0.08);
-}
-
-.jcc-cb-icon {
-  font-size: 2.5rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.jcc-cb-info {
-  flex: 1;
-  min-width: 200px;
-}
-
-.jcc-cb-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #2c2c2c;
-  margin-bottom: 0.3rem;
-}
-
-.jcc-cb-meta {
-  font-size: 0.82rem;
-  color: #4b4b4b;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.jcc-cb-fresh-badge {
-  background: #cef5e7;
-  color: #0d7055;
-  border: 1px solid #a0dfc6;
-  border-radius: 10px;
-  padding: 0.1rem 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.jcc-cb-stale-badge {
-  background: #fce7c0;
-  color: #a85900;
-  border: 1px solid #f4d48a;
-  border-radius: 10px;
-  padding: 0.1rem 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.jcc-cb-stale .jcc-cb-title { color: #a85900; }
-
-.jcc-cb-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  flex-shrink: 0;
+  padding: 0.85rem 1.25rem 1rem;
+  border-top: 1px solid #dde5ff;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 /* ── Snapshot info strip (inside dashboard when loaded from cache) ────────── */
