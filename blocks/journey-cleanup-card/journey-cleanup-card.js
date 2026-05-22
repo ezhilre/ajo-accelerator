@@ -1631,14 +1631,13 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     aiPl.textContent = `\u2705 ${aiScores.size} journeys scored (from cache)`;
     if (aiScores.size) {
       aiCountsEl.style.display = 'flex';
-      // Compute Delete / Review / Keep counts from the hydrated aiScores map
+      // Compute Delete / Review / Keep counts — only for journeys with a successful LLM result,
+      // matching the same population that onProgress reports during a live run.
       let retire = 0; let review = 0; let keep = 0;
       aiScores.forEach((entry) => {
         const { rule, llm } = entry;
-        if (!rule) return;
-        const score = llm && !llm.error
-          ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
-          : rule.score;
+        if (!rule || !llm || llm.error) return; // skip rule-only or failed LLM entries
+        const score = Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6);
         if (score >= 80) retire += 1;
         else if (score >= 50) review += 1;
         else keep += 1;
