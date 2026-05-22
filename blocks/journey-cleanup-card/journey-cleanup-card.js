@@ -1629,7 +1629,24 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     setP(100, `\u2705 ${initialJourneys.length} journeys (from cache)`);
     aiPf.style.width = '100%';
     aiPl.textContent = `\u2705 ${aiScores.size} journeys scored (from cache)`;
-    if (aiScores.size) aiCountsEl.style.display = 'flex';
+    if (aiScores.size) {
+      aiCountsEl.style.display = 'flex';
+      // Compute Delete / Review / Keep counts from the hydrated aiScores map
+      let retire = 0; let review = 0; let keep = 0;
+      aiScores.forEach((entry) => {
+        const { rule, llm } = entry;
+        if (!rule) return;
+        const score = llm && !llm.error
+          ? Math.round(rule.score * 0.4 + (llm.retirementScore || 0) * 0.6)
+          : rule.score;
+        if (score >= 80) retire += 1;
+        else if (score >= 50) review += 1;
+        else keep += 1;
+      });
+      dash.querySelector('#jcc-ai-retire').textContent = `\uD83D\uDD34 ${retire} Delete`;
+      dash.querySelector('#jcc-ai-review').textContent = `\uD83D\uDFE1 ${review} Review`;
+      dash.querySelector('#jcc-ai-keep').textContent = `\uD83D\uDFE2 ${keep} Keep`;
+    }
     updSummary(); updOwnerFilter(); applyF();
     dash.querySelector('#jr-refresh').disabled = false;
     return;
