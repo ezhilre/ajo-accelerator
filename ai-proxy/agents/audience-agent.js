@@ -69,7 +69,7 @@ async function fetchAudienceDetail(audienceId, cfg) {
  * Returns { plainEnglish, prompt, raw, error? }
  */
 async function audienceToPlainEnglish(normalized, audienceName, audienceId) {
-  const prompt = `You are a marketing analyst. Convert the following audience rule JSON into ONE clear, concise sentence in plain English for a business user. Do NOT describe the JSON structure — describe WHO qualifies for this audience and WHY.
+  const prompt = `You are a marketing analyst. Convert the following audience rule JSON into a clear, concise description in plain English for a business user. Do NOT describe the JSON structure — describe WHO qualifies for this audience and WHY.
 
 Audience name: "${audienceName}"
 
@@ -77,10 +77,12 @@ Normalized audience rule:
 ${JSON.stringify(normalized, null, 2)}
 
 Requirements:
-- Write exactly one sentence.
+- Write 1–3 sentences maximum.
 - Focus on the business meaning: who the person is, what they did, and any qualifying attributes.
 - Use plain language (no technical field names like "_adobe_corpnew.aviProgramV2").
 - Map field path segments to readable terms (e.g. "geo" → region, "fireflyOwnershipFlag" → Firefly product ownership).
+- IMPORTANT: If the rule explicitly lists named values (e.g. store names, product codes, language codes, regions), you MUST enumerate them by name — do NOT collapse them into a generic phrase. For example, if the rule excludes ["APPLE_IOS", "Apple App Store", "GOOGLE", "GOOGLEPLAYSTORE", "Google Play", "SAMSUNG", "Samsung App Store"], write "excluding subscribers from Apple App Store, Google Play, and Samsung App Store" — NOT "non-app-store channel".
+- IMPORTANT: If the rule includes a "notEqualTo" or exclusion condition on a list of values, always name those values explicitly in the description.
 
 Plain English description:`;
 
