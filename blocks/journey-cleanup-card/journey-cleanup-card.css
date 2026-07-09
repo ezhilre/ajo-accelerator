@@ -2523,6 +2523,256 @@ a.jcc-go-btn:active,
   max-width: 480px;
 }
 
+/* ── Delivery Summary screen ─────────────────────────────────────────────── */
+
+.jcc-ds-wrap {
+  font-family: 'Adobe Clean', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #2c2c2c;
+  padding: 1.25rem 1.5rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  animation: jcc-fade-in 0.2s ease;
+}
+
+.jcc-ds-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e1e1e1;
+}
+
+.jcc-ds-header-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-ds-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+  color: #2c2c2c;
+  letter-spacing: -0.01em;
+}
+
+.jcc-ds-sub {
+  font-size: 0.82rem;
+  color: #6e6e6e;
+  margin: 0;
+}
+
+/* Controls bar: month picker + fetch button */
+.jcc-ds-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+  flex-wrap: wrap;
+}
+
+/* ── Month dropdown ──────────────────────────────────────────────────────── */
+
+.jcc-ds-month-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.jcc-ds-month-selector {
+  position: relative;
+  display: inline-block;
+}
+
+.jcc-ds-month-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: #fff;
+  border: 1.5px solid #cacaca;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2c2c2c;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 180px;
+  justify-content: space-between;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.jcc-ds-month-btn:hover,
+.jcc-ds-month-btn:focus {
+  border-color: #1473e6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(20, 115, 230, 0.18);
+}
+
+.jcc-ds-month-val {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2c2c2c;
+}
+
+.jcc-ds-month-arrow {
+  font-size: 0.7rem;
+  color: #6e6e6e;
+  flex-shrink: 0;
+}
+
+.jcc-ds-month-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  z-index: 500;
+  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+  animation: jcc-pop-in 0.15s ease;
+}
+
+.jcc-ds-month-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.7rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #2c2c2c;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.jcc-ds-month-opt:last-child {
+  border-bottom: none;
+}
+
+.jcc-ds-month-opt:hover {
+  background: #f0f5ff;
+  color: #1473e6;
+}
+
+.jcc-ds-month-opt-active {
+  background: #1473e6 !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+
+/* ── Loading state ───────────────────────────────────────────────────────── */
+
+.jcc-ds-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2.5rem 1rem;
+  min-height: 160px;
+}
+
+.jcc-ds-prog-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 480px;
+}
+
+.jcc-ds-prog-bar {
+  flex: 1;
+  height: 6px;
+  background: #dde5ff;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.jcc-ds-prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1473e6, #7e5fcf);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.jcc-ds-prog-lbl {
+  font-size: 0.78rem;
+  color: #4b4b4b;
+  white-space: nowrap;
+  min-width: 160px;
+}
+
+/* ── Content area ────────────────────────────────────────────────────────── */
+
+.jcc-ds-content {
+  min-height: 80px;
+}
+
+.jcc-ds-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+  color: #6e6e6e;
+  background: #fafafa;
+  border: 1px dashed #cacaca;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.jcc-ds-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  font-size: 0.9rem;
+  color: #6e6e6e;
+  gap: 0.5rem;
+}
+
+/* ── Channel badges in Delivery Summary table ────────────────────────────── */
+
+.jcc-ds-ch-badge {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.jcc-ds-ch-email    { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+.jcc-ds-ch-sms      { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.jcc-ds-ch-push     { background: #f3e5f5; color: #6a1b9a; border-color: #ce93d8; }
+.jcc-ds-ch-inapp,
+.jcc-ds-ch-in_app   { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
+.jcc-ds-ch-code     { background: #e8eaf6; color: #283593; border-color: #9fa8da; }
+.jcc-ds-ch-direct_mail { background: #fce4ec; color: #ad1457; border-color: #f48fb1; }
+.jcc-ds-ch-web      { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
+
+/* ── responsive tweaks for DS ────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .jcc-ds-wrap { padding: 0.75rem; }
+  .jcc-ds-header { flex-wrap: wrap; }
+  .jcc-ds-controls-bar { flex-direction: column; align-items: stretch; }
+  .jcc-ds-month-btn { width: 100%; }
+  .jcc-ds-month-dropdown { min-width: 100%; }
+}
+
 /* ── responsive ──────────────────────────────────────────────────────────── */
 /* responsive */
 @media (max-width: 640px) {

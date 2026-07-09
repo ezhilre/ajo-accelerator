@@ -240,11 +240,10 @@ function showModeSelect(root, cfg) {
         <span class="jcc-ms-section-title">AJO Delivery Report</span>
       </div>
       <div class="jcc-ms-cards">
-        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-del-summary" disabled>
+        <button class="jcc-ms-card" id="jcc-ms-del-summary">
           <span class="jcc-ms-card-icon">&#x1F4CB;</span>
           <span class="jcc-ms-card-title">Delivery Summary</span>
-          <span class="jcc-ms-card-desc">View aggregated delivery metrics across journeys &mdash; sent, delivered, opened, bounced and more.</span>
-          <span class="jcc-ms-coming-soon">Coming Soon</span>
+          <span class="jcc-ms-card-desc">View aggregated campaign delivery metrics by month &mdash; fetched in 7-day windows from Jan 2026 onwards.</span>
         </button>
         <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-del-channel" disabled>
           <span class="jcc-ms-card-icon">&#x1F4E1;</span>
@@ -260,6 +259,7 @@ function showModeSelect(root, cfg) {
   root.appendChild(wrap);
   wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showDashboard(root, cfg));
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
+  wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
 }
 
 // ─── journey id lookup ────────────────────────────────────────────────────────
@@ -1721,6 +1721,388 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   }
 
   startLoad();
+}
+
+// ─── Delivery Summary ─────────────────────────────────────────────────────────
+
+const DS_GQL_URL = 'https://exc-unifiedcontent.experience.adobe.net/api/gql/app/ajoCampaignsApp/graphql?appId=ajoCampaignsApp';
+const DS_START_YEAR = 2026;
+const DS_START_MONTH = 1; // January
+
+// Build month options from Jan 2026 up to current month
+function buildMonthOptions() {
+  const now = new Date();
+  const months = [];
+  let y = DS_START_YEAR; let m = DS_START_MONTH;
+  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+    months.push({ year: y, month: m });
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  months.reverse(); // newest first
+  return months;
+}
+
+function monthLabel(year, month) {
+  return new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+// Build 7-day window date ranges for a given month
+function buildWeekWindows(year, month) {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const windows = [];
+  let day = 1;
+  while (day <= daysInMonth) {
+    const start = new Date(year, month - 1, day);
+    const end = new Date(year, month - 1, Math.min(day + 6, daysInMonth));
+    windows.push({ start, end });
+    day += 7;
+  }
+  return windows;
+}
+
+// Fetch campaigns for a specific 7-day window via GraphQL
+async function fetchCampaignsWindow(cfg, startDate, endDate, page = 1) {
+  const startMs = startDate.getTime();
+  const endMs = endDate.getTime();
+  const body = {
+    operationName: 'getCampaigns',
+    query: `
+    query getCampaigns($cursor: String $page: Int $sort_by: String $sort_order: String $filters: [CampaignFilter] $strictType: String) {
+      campaigns(cursor: $cursor page: $page sort_by: $sort_by sort_order: $sort_order filters: $filters strictType: $strictType) {
+        data {
+          name description campaignId status
+          packages { packageId packageName channel enabled status attributes { surfaceId surface { surfaceId surfaceType surfaceName } } }
+          createdBy createdByName modifiedBy modifiedByName modifiedAt publishedAt
+          displayStartDate displayEndDate priority versionId campaignType campaignClass category draftVersionId
+        }
+        _page { count page orderby totalPages totalCount }
+        _links { _self { href } _next { href } }
+      }
+    }`,
+    variables: {
+      sort_order: 'desc',
+      sort_by: 'modifiedAt',
+      filters: [{
+        group: 'AND',
+        status: { operator: 'eq', values: ['COMPLETED', 'STOPPED', 'LIVE'] },
+        trueStartDate: { operator: 'lte', values: [String(endMs)] },
+        trueEndDate: { operator: 'gte', values: [String(startMs)] },
+      }],
+      page,
+      strictType: 'Scheduled',
+    },
+    extensions: {
+      clientContext: {
+        applicationId: 'ajoCampaignsApp:prod',
+        groupId: cfg.orgId,
+      },
+      sandboxName: cfg.sandbox,
+      sandboxType: 'development',
+      isDefaultSandbox: 'false',
+    },
+  };
+
+  const res = await fetch(DS_GQL_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'accept': '*/*',
+      'authorization': `Bearer ${cfg.token}`,
+      'x-api-key': 'exc_app',
+      'x-gw-ims-org-id': cfg.orgId,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 120)}`);
+  }
+  return res.json();
+}
+
+// Fetch ALL campaigns for a month by iterating 7-day windows (all pages per window)
+async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
+  const windows = buildWeekWindows(year, month);
+  const seen = new Set();
+  const campaigns = [];
+
+  for (let wi = 0; wi < windows.length; wi += 1) {
+    const { start, end } = windows[wi];
+    let page = 1;
+    let totalPages = 1;
+    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: campaigns.length });
+
+    do {
+      const data = await fetchCampaignsWindow(cfg, start, end, page);
+      const pageData = data?.data?.campaigns?._page;
+      const items = data?.data?.campaigns?.data || [];
+      totalPages = pageData?.totalPages ?? 1;
+      items.forEach((c) => {
+        if (!seen.has(c.campaignId)) {
+          seen.add(c.campaignId);
+          campaigns.push(c);
+        }
+      });
+      page += 1;
+    } while (page <= totalPages);
+  }
+
+  return campaigns;
+}
+
+function dsCampaignStatusCls(status) {
+  const s = (status || '').toUpperCase();
+  if (s === 'LIVE') return 'jcc-st-live';
+  if (s === 'COMPLETED') return 'jcc-st-closed';
+  if (s === 'STOPPED') return 'jcc-st-stopped';
+  return 'jcc-st-unknown';
+}
+
+function dsCampaignStatusLabel(status) {
+  const s = (status || '').toUpperCase();
+  const map = { LIVE: 'Live', COMPLETED: 'Completed', STOPPED: 'Stopped', DRAFT: 'Draft' };
+  return map[s] || (status || '\u2014');
+}
+
+function dsChannelBadge(channels) {
+  if (!channels || !channels.length) return '\u2014';
+  return [...new Set(channels)].map((ch) => `<span class="jcc-ds-ch-badge jcc-ds-ch-${(ch || '').toLowerCase()}">${esc(ch || '?')}</span>`).join(' ');
+}
+
+function showDeliverySummary(root, cfg) {
+  root.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'jcc-ds-wrap';
+
+  const months = buildMonthOptions();
+  let selectedIdx = 0; // index into months array (newest first)
+  let dropOpen = false;
+  let loading = false;
+  let campaigns = [];
+  let filterQ = '';
+  let filterStatus = 'all';
+
+  // Build month dropdown HTML
+  function monthDropHtml() {
+    const { year, month } = months[selectedIdx];
+    return `
+      <div class="jcc-ds-month-selector" id="jcc-ds-month-sel">
+        <button class="jcc-ds-month-btn" id="jcc-ds-month-trigger" aria-haspopup="listbox" aria-expanded="${dropOpen}">
+          <span class="jcc-ds-month-val">${monthLabel(year, month)}</span>
+          <span class="jcc-ds-month-arrow">${dropOpen ? '\u25B2' : '\u25BC'}</span>
+        </button>
+        ${dropOpen ? `
+          <div class="jcc-ds-month-dropdown" role="listbox">
+            ${months.map((mo, i) => `
+              <button class="jcc-ds-month-opt${i === selectedIdx ? ' jcc-ds-month-opt-active' : ''}" role="option" aria-selected="${i === selectedIdx}" data-idx="${i}">
+                ${monthLabel(mo.year, mo.month)}
+              </button>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function renderTable() {
+    const tbody = wrap.querySelector('#jcc-ds-tbody');
+    const rcEl = wrap.querySelector('#jcc-ds-rc');
+    const emEl = wrap.querySelector('#jcc-ds-empty');
+    if (!tbody) return;
+
+    const q = filterQ.toLowerCase();
+    const filtered = campaigns.filter((c) => {
+      if (filterStatus !== 'all' && (c.status || '').toUpperCase() !== filterStatus) return false;
+      if (q) {
+        const hay = [c.name, c.campaignId, c.campaignType, c.createdByName, c.createdBy].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (rcEl) rcEl.textContent = `${filtered.length} campaign${filtered.length !== 1 ? 's' : ''}${filtered.length !== campaigns.length ? ` of ${campaigns.length}` : ''}`;
+
+    if (!filtered.length) {
+      tbody.innerHTML = '';
+      if (emEl) emEl.style.display = 'flex';
+      return;
+    }
+    if (emEl) emEl.style.display = 'none';
+
+    tbody.innerHTML = filtered.map((c) => {
+      const sCls = dsCampaignStatusCls(c.status);
+      const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
+      const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
+      const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
+      return `<tr class="jcc-row">
+        <td class="jcc-cn" title="${esc(c.name || '')}"><span>${esc(c.name || '\u2014')}</span></td>
+        <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
+        <td>${dsChannelBadge(channels)}</td>
+        <td class="jcc-cp" title="${esc(c.createdByName || c.createdBy || '')}">${esc(c.createdByName || c.createdBy || '\u2014')}</td>
+        <td class="jcc-cd">${pubDate}</td>
+        <td class="jcc-cd">${modDate}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderContent() {
+    const contentEl = wrap.querySelector('#jcc-ds-content');
+    if (!contentEl) return;
+
+    if (loading) {
+      contentEl.innerHTML = `<div class="jcc-ds-loading"><span class="jcc-ai-analyzing">\u23F3 Fetching campaigns for ${monthLabel(months[selectedIdx].year, months[selectedIdx].month)}\u2026</span><div id="jcc-ds-prog" class="jcc-ds-prog-wrap"><div class="jcc-ds-prog-bar"><div class="jcc-ds-prog-fill" id="jcc-ds-pf" style="width:0%"></div></div><span class="jcc-ds-prog-lbl" id="jcc-ds-pl">Starting\u2026</span></div></div>`;
+      return;
+    }
+
+    if (!campaigns.length) {
+      contentEl.innerHTML = `<div class="jcc-ds-empty" id="jcc-ds-empty" style="display:flex">\uD83D\uDCED No campaigns found for this month.</div>`;
+      return;
+    }
+
+    contentEl.innerHTML = `
+      <div class="jcc-controls" style="margin-bottom:0.75rem">
+        <div class="jcc-search-wrap"><span>\uD83D\uDD0D</span>
+          <input id="jcc-ds-sq" class="jcc-search" type="text" placeholder="Search name, ID, owner\u2026" autocomplete="off" value="${esc(filterQ)}" />
+          <button id="jcc-ds-sq-clr" class="jcc-clr-btn" style="display:${filterQ ? 'flex' : 'none'}">\u2715</button>
+        </div>
+        <div class="jcc-filter-row">
+          <div class="jcc-fg"><label for="jcc-ds-sf">Status</label>
+            <select id="jcc-ds-sf" class="jcc-sel">
+              <option value="all"${filterStatus === 'all' ? ' selected' : ''}>All</option>
+              <option value="LIVE"${filterStatus === 'LIVE' ? ' selected' : ''}>Live</option>
+              <option value="COMPLETED"${filterStatus === 'COMPLETED' ? ' selected' : ''}>Completed</option>
+              <option value="STOPPED"${filterStatus === 'STOPPED' ? ' selected' : ''}>Stopped</option>
+            </select>
+          </div>
+          <span id="jcc-ds-rc" class="jcc-rc"></span>
+        </div>
+      </div>
+      <div class="jcc-tbl-wrap">
+        <table class="jcc-tbl">
+          <thead><tr>
+            <th>Name</th><th>Status</th><th>Channels</th><th>Owner</th><th>Published</th><th>Last Modified</th>
+          </tr></thead>
+          <tbody id="jcc-ds-tbody"></tbody>
+        </table>
+        <div id="jcc-ds-empty" class="jcc-empty" style="display:none"><p>\uD83D\uDD0D No campaigns match.</p></div>
+      </div>
+    `;
+
+    renderTable();
+
+    // Wire search & filter
+    let sqT;
+    const sqEl = contentEl.querySelector('#jcc-ds-sq');
+    const sqClrEl = contentEl.querySelector('#jcc-ds-sq-clr');
+    const sfEl = contentEl.querySelector('#jcc-ds-sf');
+
+    sqEl?.addEventListener('input', () => {
+      clearTimeout(sqT);
+      sqT = setTimeout(() => {
+        filterQ = sqEl.value;
+        sqClrEl.style.display = filterQ ? 'flex' : 'none';
+        renderTable();
+      }, 200);
+    });
+    sqClrEl?.addEventListener('click', () => { sqEl.value = ''; filterQ = ''; sqClrEl.style.display = 'none'; renderTable(); });
+    sfEl?.addEventListener('change', () => { filterStatus = sfEl.value; renderTable(); });
+  }
+
+  async function loadMonth() {
+    if (loading) return;
+    loading = true;
+    campaigns = [];
+    filterQ = '';
+    filterStatus = 'all';
+    renderContent();
+
+    const { year, month } = months[selectedIdx];
+    try {
+      campaigns = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+        const pf = wrap.querySelector('#jcc-ds-pf');
+        const pl = wrap.querySelector('#jcc-ds-pl');
+        const pct = Math.round((wi / totalWindows) * 100);
+        if (pf) pf.style.width = `${pct}%`;
+        if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} campaigns loaded\u2026`;
+      });
+    } catch (e) {
+      loading = false;
+      const contentEl = wrap.querySelector('#jcc-ds-content');
+      if (contentEl) contentEl.innerHTML = `<div class="jcc-err-banner">\u26A0 Error fetching campaigns: ${esc(e.message)}</div>`;
+      return;
+    }
+
+    loading = false;
+    renderContent();
+  }
+
+  // ── Render shell ──────────────────────────────────────────────────────────
+  wrap.innerHTML = `
+    <div class="jcc-ds-header">
+      <button class="jcc-btn-sec jcc-ds-back" id="jcc-ds-back">\u2190 Back</button>
+      <span class="jcc-ds-header-icon">\uD83D\uDCCB</span>
+      <div>
+        <h2 class="jcc-ds-title">Delivery Summary</h2>
+        <p class="jcc-ds-sub">Sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
+      </div>
+    </div>
+    <div class="jcc-ds-controls-bar">
+      <div class="jcc-ds-month-area" id="jcc-ds-month-area">
+        ${monthDropHtml()}
+      </div>
+      <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch Campaigns</button>
+    </div>
+    <div id="jcc-ds-content" class="jcc-ds-content">
+      <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click <strong>Fetch Campaigns</strong> to load delivery data.</div>
+    </div>
+  `;
+  root.appendChild(wrap);
+
+  // ── Event wiring ──────────────────────────────────────────────────────────
+
+  wrap.querySelector('#jcc-ds-back').addEventListener('click', () => showModeSelect(root, cfg));
+
+  function refreshMonthArea() {
+    const area = wrap.querySelector('#jcc-ds-month-area');
+    if (area) area.innerHTML = monthDropHtml();
+    wireMonthDrop();
+  }
+
+  function wireMonthDrop() {
+    const trigger = wrap.querySelector('#jcc-ds-month-trigger');
+    if (!trigger) return;
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropOpen = !dropOpen;
+      refreshMonthArea();
+    });
+
+    wrap.querySelectorAll('.jcc-ds-month-opt').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedIdx = Number(btn.dataset.idx);
+        dropOpen = false;
+        refreshMonthArea();
+      });
+    });
+
+    // Close on outside click
+    function outsideClose(e) {
+      if (!wrap.querySelector('#jcc-ds-month-sel')?.contains(e.target)) {
+        dropOpen = false;
+        refreshMonthArea();
+        document.removeEventListener('click', outsideClose, true);
+      }
+    }
+    if (dropOpen) setTimeout(() => document.addEventListener('click', outsideClose, true), 0);
+  }
+
+  wireMonthDrop();
+
+  wrap.querySelector('#jcc-ds-fetch').addEventListener('click', () => loadMonth());
 }
 
 // ─── pre-dashboard placeholder ────────────────────────────────────────────────
