@@ -1932,7 +1932,7 @@ function dsCampaignStatusLabel(status) {
 
 function dsChannelBadge(channels) {
   if (!channels || !channels.length) return '\u2014';
-  return [...new Set(channels)].map((ch) => `<span class="jcc-ds-ch-badge jcc-ds-ch-${(ch || '').toLowerCase()}">${esc(ch || '?')}</span>`).join(' ');
+  return esc(channels.join(', '));
 }
 
 function buildDsCsv(campaigns) {
@@ -2032,9 +2032,8 @@ function showDeliverySummary(root, cfg) {
         <td class="jcc-cn" title="${esc(c.name || '')}"><a class="jcc-go-btn" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
         <td>${dsChannelBadge(channels)}</td>
-        <td class="jcc-cp" title="${esc(c.createdByName || c.createdBy || '')}">${esc(c.createdByName || c.createdBy || '\u2014')}</td>
         <td class="jcc-cd">${pubDate}</td>
-        <td class="jcc-mono" style="font-size:0.75rem;color:#4b4b4b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.versionId || '')}">${esc(c.versionId || '\u2014')}</td>
+        <td style="font-size:0.75rem;color:#b3b3b3;font-style:italic">Coming soon</td>
       </tr>`;
     }).join('');
   }
@@ -2071,13 +2070,7 @@ function showDeliverySummary(root, cfg) {
           <div class="jcc-fg"><label for="jcc-ds-cf">Channel</label>
             <select id="jcc-ds-cf" class="jcc-sel">
               <option value="all"${filterChannel === 'all' ? ' selected' : ''}>All Channels</option>
-              <option value="email"${filterChannel === 'email' ? ' selected' : ''}>Email</option>
-              <option value="sms"${filterChannel === 'sms' ? ' selected' : ''}>SMS</option>
-              <option value="push"${filterChannel === 'push' ? ' selected' : ''}>Push</option>
-              <option value="in_app"${filterChannel === 'in_app' ? ' selected' : ''}>In-App</option>
-              <option value="code"${filterChannel === 'code' ? ' selected' : ''}>Code</option>
-              <option value="direct_mail"${filterChannel === 'direct_mail' ? ' selected' : ''}>Direct Mail</option>
-              <option value="web"${filterChannel === 'web' ? ' selected' : ''}>Web</option>
+              ${[...new Set(campaigns.flatMap((c) => (c.packages || []).flatMap((p) => (p.channel ? [p.channel] : []))))].sort().map((ch) => `<option value="${esc(ch.toLowerCase())}"${filterChannel === ch.toLowerCase() ? ' selected' : ''}>${esc(ch)}</option>`).join('')}
             </select>
           </div>
           <span id="jcc-ds-rc" class="jcc-rc"></span>
@@ -2086,7 +2079,7 @@ function showDeliverySummary(root, cfg) {
       <div class="jcc-tbl-wrap">
         <table class="jcc-tbl">
           <thead><tr>
-            <th>Name</th><th>Status</th><th>Channels</th><th>Owner</th><th>Published</th><th>Version ID</th>
+            <th>Name</th><th>Status</th><th>Channels</th><th>Published</th><th>AI Insight</th>
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
