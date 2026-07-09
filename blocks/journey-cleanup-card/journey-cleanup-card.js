@@ -668,8 +668,12 @@ function showCacheBanner(root, snap, cfg) {
         </div>
       `;
 
-      el.innerHTML = tabsHtml + detailHtml;
+      const backBtnHtml = `<button class="jcc-btn-sec jcc-cb-back" id="jcc-cb-back-btn">&#x2190; Back</button>`;
+      el.innerHTML = backBtnHtml + tabsHtml + detailHtml;
       root.appendChild(el);
+
+      // ── Back button → mode select ─────────────────────────────────────────
+      el.querySelector('#jcc-cb-back-btn').addEventListener('click', () => resolve({ action: 'back', cfg }));
 
       // ── Tab click → switch sandbox ────────────────────────────────────────
       el.querySelectorAll('.jcc-cb-tab').forEach((tab) => {
@@ -707,10 +711,11 @@ function showCacheBanner(root, snap, cfg) {
       // Fallback: IndexedDB unavailable — show simple banner
       const el = document.createElement('div');
       el.className = 'jcc-cache-banner';
+      el.innerHTML = `<button class="jcc-btn-sec jcc-cb-back" id="jcc-cb-back-btn-fb">&#x2190; Back</button>`;
       const staleBadge = snap.isStale
         ? `<span class="jcc-cb-stale-badge">\u26A0 ${snap.daysOld} days old \u2014 consider refreshing</span>`
         : `<span class="jcc-cb-fresh-badge">\u2705 ${snap.daysOld} days old</span>`;
-      el.innerHTML = `
+      el.innerHTML += `
         <div class="jcc-cb-icon">\uD83D\uDCE6</div>
         <div class="jcc-cb-info${snap.isStale ? ' jcc-cb-stale' : ''}">
           <div class="jcc-cb-title">Cached snapshot \u2014 <strong>${esc(cfg.sandbox)}</strong></div>
@@ -728,6 +733,7 @@ function showCacheBanner(root, snap, cfg) {
         </div>
       `;
       root.appendChild(el);
+      el.querySelector('#jcc-cb-back-btn-fb').addEventListener('click', () => resolve({ action: 'back', cfg }));
       el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve({ action: 'cache', cfg, snap }));
       el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'fresh', cfg }));
       el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve({ action: 'clear', cfg }));
@@ -769,6 +775,11 @@ async function showDashboard(root, cfg) {
     const action = typeof result === 'object' ? result.action : result;
     const resolvedCfg = (typeof result === 'object' && result.cfg) ? result.cfg : cfg;
     const resolvedSnap = (typeof result === 'object' && result.snap) ? result.snap : cachedSnap;
+
+    if (action === 'back') {
+      showModeSelect(root, resolvedCfg);
+      return;
+    }
 
     if (action === 'cache' && resolvedSnap && !resolvedSnap._noCache) {
       const restoredScores = hydrateScores(resolvedSnap.aiScores);
