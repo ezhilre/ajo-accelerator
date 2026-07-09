@@ -1761,97 +1761,98 @@ function buildWeekWindows(year, month) {
   return windows;
 }
 
-// Fetch one page of campaigns (no date filter — date filtering done client-side)
-async function fetchCampaignsWindow(cfg, page = 1) {
+// Fetch campaigns for a specific 7-day window using searchV2 / globalSearch
+async function fetchCampaignsWindow(cfg, startDate, endDate) {
+  const startMs = startDate.getTime();
+  const endMs = endDate.getTime();
+
   const GQL_QUERY = `
-    query getCampaigns(
-      $cursor: String
-      $page: Int
-      $sort_by: String
-      $sort_order: String
-      $filters: [CampaignFilter]
-      $strictType: String
-    ) {
-      campaigns(
-        cursor: $cursor
-        page: $page
-        sort_by: $sort_by
-        sort_order: $sort_order
-        filters: $filters
-        strictType: $strictType
-      ) {
-        data {
-          name
-          description
-          campaignId
-          status
-          packages {
-            packageId
-            packageName
-            channel
-            enabled
-            status
-            attributes {
-              surfaceId
-              surface {
-                surfaceId
-                surfaceType
-                surfaceName
-              }
-            }
+    query searchV2($params: GlobalSearchRequestParams) {
+      globalSearch(params: $params) {
+        metrics {
+          total_hits
+          hits {
+            hit
+            capability
           }
-          createdBy
-          createdByName
-          modifiedBy
-          modifiedByName
-          modifiedAt
-          publishedAt
-          displayStartDate
-          displayEndDate
-          priority
-          versionId
-          campaignType
-          campaignClass
-          category
-          draftVersionId
         }
-        _page {
-          count
-          page
-          orderby
-          totalPages
-          totalCount
-        }
-        _links {
-          _self { href }
-          _next { href }
+        result_sets {
+          data {
+            id
+            name
+            labels
+            description
+            created
+            createdby
+            modified
+            modifiedby
+            tags {
+              id
+              name
+              tagCategoryId
+              tagCategoryName
+            }
+            custom
+          }
         }
       }
     }
   `;
 
   const body = {
-    operationName: 'getCampaigns',
+    operationName: 'searchV2',
     query: GQL_QUERY,
     variables: {
-      sort_order: 'desc',
-      sort_by: 'modifiedAt',
-      filters: [{
-        group: 'AND',
-        status: { operator: 'eq', values: ['COMPLETED', 'STOPPED', 'LIVE'] },
-      }],
-      page,
-      strictType: 'Scheduled',
+      params: {
+        isPostNounFilter: false,
+        q: '',
+        limit: 500,
+        start_index: 0,
+        sort_orderby: 'modified',
+        filters: {
+          standard: {
+            filterList: [
+              { filterName: 'noun', filterType: 'enum_values', anyOf: ['campaign'] },
+              { filterName: 'sandboxname', filterType: 'enum_values', anyOf: [cfg.sandbox] },
+            ],
+          },
+          custom: [{
+            filterList: [
+              {
+                filterName: 'status',
+                filterType: 'enum_values',
+                anyOf: ['SCHEDULED', 'LIVE', 'IN_REVIEW', 'STOPPED', 'COMPLETED', 'FAILED', 'ARCHIVED'],
+              },
+              {
+                filterName: 'trueStartDate',
+                filterType: 'datetime',
+                max: String(endMs),
+              },
+              {
+                filterName: 'trueEndDate',
+                filterType: 'datetime',
+                min: String(startMs),
+              },
+              {
+                filterName: 'status',
+                filterType: 'enum_values',
+                anyOf: ['COMPLETED', 'STOPPED', 'LIVE'],
+              },
+            ],
+            noun: 'campaign',
+          }],
+        },
+      },
     },
     extensions: {
       clientContext: {
         applicationId: 'ajoCampaignsApp:prod',
         groupId: cfg.orgId,
       },
-      sandboxName: cfg.sandbox,
-      sandboxType: 'development',
-      isDefaultSandbox: 'false',
     },
+    sandboxName: cfg.sandbox,
+    sandboxType: 'development',
+    isDefaultSandbox: 'false',
   };
 
   const res = await fetch(DS_GQL_URL, {
@@ -1862,7 +1863,6 @@ async function fetchCampaignsWindow(cfg, page = 1) {
       authorization: `Bearer ${cfg.token}`,
       'x-api-key': 'exc_app',
       'x-gw-ims-org-id': cfg.orgId,
-      'x-sandbox-name': cfg.sandbox,
       'x-gw-region': 'VA7',
     },
     body: JSON.stringify(body),
@@ -1875,39 +1875,41 @@ async function fetchCampaignsWindow(cfg, page = 1) {
   return res.json();
 }
 
-// Fetch ALL campaigns for a month:
-// - Paginates through all pages of the API
-// - Filters client-side to campaigns whose publishedAt or modifiedAt falls within the month
-// - Reports progress via onProgress callback
+// Fetch ALL campaigns for a month using 7-day windows (5 calls for a 31-day month)
 async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
-  const monthStart = new Date(year, month - 1, 1).getTime();
-  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime(); // last ms of last day
+  const windows = buildWeekWindows(year, month);
   const seen = new Set();
   const campaigns = [];
 
-  let page = 1;
-  let totalPages = 1;
+  for (let wi = 0; wi < windows.length; wi += 1) {
+    const { start, end } = windows[wi];
+    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: campaigns.length });
 
-  do {
-    onProgress({ window: page, totalWindows: totalPages, loaded: campaigns.length });
+    const data = await fetchCampaignsWindow(cfg, start, end);
+    const resultSets = data?.data?.globalSearch?.result_sets || [];
 
-    const data = await fetchCampaignsWindow(cfg, page);
-    const pageData = data?.data?.campaigns?._page;
-    const items = data?.data?.campaigns?.data || [];
-    totalPages = pageData?.totalPages ?? 1;
-
-    // Client-side filter: keep campaigns active/published within the selected month
-    items.forEach((c) => {
-      if (seen.has(c.campaignId)) return;
-      const ts = Number(c.publishedAt || c.modifiedAt || 0);
-      if (ts >= monthStart && ts <= monthEnd) {
-        seen.add(c.campaignId);
-        campaigns.push(c);
-      }
+    resultSets.forEach((rs) => {
+      const c = rs?.data;
+      if (!c || !c.id) return;
+      if (seen.has(c.id)) return;
+      seen.add(c.id);
+      // Normalise shape to match display code expectations
+      campaigns.push({
+        campaignId: c.id,
+        name: c.name,
+        description: c.description,
+        status: c.custom?.status || '',
+        createdBy: c.createdby,
+        createdByName: c.createdby,
+        modifiedBy: c.modifiedby,
+        modifiedByName: c.modifiedby,
+        modifiedAt: c.modified,
+        publishedAt: c.custom?.trueStartDate || c.modified,
+        packages: (c.custom?.channels || []).map((ch) => ({ channel: ch })),
+        campaignType: c.custom?.campaignType || '',
+      });
     });
-
-    page += 1;
-  } while (page <= totalPages);
+  }
 
   return campaigns;
 }
