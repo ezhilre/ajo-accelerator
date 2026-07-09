@@ -1941,10 +1941,20 @@ const DS_CHANNEL_LABEL = {
   direct_mail: 'Direct Mail',
   web: 'Web',
   code: 'Code',
+  whatsapp: 'WhatsApp',
 };
 
+/**
+ * Convert a raw API channel value to a human-readable label.
+ * Known values are mapped via DS_CHANNEL_LABEL.
+ * Unknown values are title-cased and returned as-is so any new
+ * channels the API introduces are still displayed sensibly.
+ */
 function dsChannelLabel(ch) {
-  return DS_CHANNEL_LABEL[(ch || '').toLowerCase()] || ch;
+  const key = (ch || '').toLowerCase();
+  if (DS_CHANNEL_LABEL[key]) return DS_CHANNEL_LABEL[key];
+  // Title-case unknown channel values (e.g. "linechat" → "Linechat")
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || ch;
 }
 
 function dsChannelBadge(channels) {
