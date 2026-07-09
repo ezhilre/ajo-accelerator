@@ -2272,6 +2272,66 @@ a.jcc-go-btn:active,
   margin: 0;
 }
 
+/* ── Mode selection sections (Journey / Campaign) ────────────────────────── */
+
+.jcc-ms-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.jcc-ms-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e1e1e1;
+}
+
+.jcc-ms-section-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.jcc-ms-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2c2c2c;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Coming Soon badge + disabled card ──────────────────────────────────── */
+
+.jcc-ms-card-soon {
+  position: relative;
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.jcc-ms-card-soon:hover {
+  border-color: #e1e1e1 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.jcc-ms-coming-soon {
+  display: inline-block;
+  background: #f0f4ff;
+  color: #1473e6;
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.2rem;
+}
+
 /* ── Journey ID Lookup screen ────────────────────────────────────────────── */
 
 .jcc-id-lookup {

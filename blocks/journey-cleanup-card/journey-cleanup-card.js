@@ -193,18 +193,47 @@ function showModeSelect(root, cfg) {
       </div>
     </div>
     <p class="jcc-ms-prompt">How would you like to analyze your journeys?</p>
-    <div class="jcc-ms-cards">
-      <button class="jcc-ms-card" id="jcc-ms-all">
-        <span class="jcc-ms-card-icon">&#x1F4CA;</span>
-        <span class="jcc-ms-card-title">Analyze All</span>
-        <span class="jcc-ms-card-desc">Fetch &amp; score all stale journeys not modified in 30+ days. Supports AI risk scoring, filtering, CSV export and more.</span>
-      </button>
-      <button class="jcc-ms-card" id="jcc-ms-single">
-        <span class="jcc-ms-card-icon">&#x1F50D;</span>
-        <span class="jcc-ms-card-title">Analyze by Journey ID</span>
-        <span class="jcc-ms-card-desc">Look up a specific journey by its UUID. Instantly get rule-based and AI risk analysis for that single journey.</span>
-      </button>
+
+    <div class="jcc-ms-section">
+      <div class="jcc-ms-section-header">
+        <span class="jcc-ms-section-icon">&#x1F5FA;</span>
+        <span class="jcc-ms-section-title">Journey</span>
+      </div>
+      <div class="jcc-ms-cards">
+        <button class="jcc-ms-card" id="jcc-ms-all">
+          <span class="jcc-ms-card-icon">&#x1F4CA;</span>
+          <span class="jcc-ms-card-title">Analyze All</span>
+          <span class="jcc-ms-card-desc">Fetch &amp; score all stale journeys not modified in 30+ days. Supports AI risk scoring, filtering, CSV export and more.</span>
+        </button>
+        <button class="jcc-ms-card" id="jcc-ms-single">
+          <span class="jcc-ms-card-icon">&#x1F50D;</span>
+          <span class="jcc-ms-card-title">Analyze by Journey ID</span>
+          <span class="jcc-ms-card-desc">Look up a specific journey by its UUID. Instantly get rule-based and AI risk analysis for that single journey.</span>
+        </button>
+      </div>
     </div>
+
+    <div class="jcc-ms-section">
+      <div class="jcc-ms-section-header">
+        <span class="jcc-ms-section-icon">&#x1F4E3;</span>
+        <span class="jcc-ms-section-title">Campaign</span>
+      </div>
+      <div class="jcc-ms-cards">
+        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-camp-all" disabled>
+          <span class="jcc-ms-card-icon">&#x1F4CA;</span>
+          <span class="jcc-ms-card-title">Analyze All</span>
+          <span class="jcc-ms-card-desc">Fetch &amp; score all stale campaigns. Supports AI risk scoring, filtering, CSV export and more.</span>
+          <span class="jcc-ms-coming-soon">Coming Soon</span>
+        </button>
+        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-camp-single" disabled>
+          <span class="jcc-ms-card-icon">&#x1F50D;</span>
+          <span class="jcc-ms-card-title">Analyze by Campaign ID</span>
+          <span class="jcc-ms-card-desc">Look up a specific campaign by its UUID. Instantly get rule-based and AI risk analysis for that single campaign.</span>
+          <span class="jcc-ms-coming-soon">Coming Soon</span>
+        </button>
+      </div>
+    </div>
+
     <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
   `;
   root.appendChild(wrap);
@@ -793,7 +822,9 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     snapBannerHtml,
     // Header
     '<div class="jcc-header">',
-    '  <div class="jcc-header-left"><span class="jcc-hi">&#x1F9F9;</span><div>',
+    '  <div class="jcc-header-left">',
+    '    <button class="jcc-btn-sec jcc-back-btn" id="jr-back">&#x2190; Home</button>',
+    '    <span class="jcc-hi">&#x1F9F9;</span><div>',
     '    <h2 class="jcc-title">Journey Cleanup Dashboard</h2>',
     `    <p class="jcc-sub">Journeys not modified in <strong>${STALE_DAYS}+ days</strong></p>`,
     '  </div></div>',
@@ -1509,6 +1540,12 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
       btn.classList.add('jcc-bucket-active');
       applyF();
     });
+  });
+
+  dash.querySelector('#jr-back').addEventListener('click', () => {
+    if (fetchCtrl) { fetchCtrl.abort(); fetchCtrl = null; }
+    if (agentPool) { agentPool.stop(); agentPool = null; }
+    showModeSelect(root, cfg);
   });
 
   dash.querySelector('#jr-csv').addEventListener('click', () => triggerDownload(buildCsv(filtered, cfg, aiScores), `journey-cleanup-filtered-${todayIso()}.csv`));
