@@ -2740,6 +2740,22 @@ a.jcc-go-btn:active,
   gap: 0.5rem;
 }
 
+/* ── Delivery Summary table column widths ───────────────────────────────── */
+
+.jcc-ds-wrap .jcc-tbl .jcc-cn {
+  width: 320px;
+  max-width: 320px;
+  min-width: 180px;
+}
+
+.jcc-ds-wrap .jcc-tbl .jcc-cn a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
 /* ── Channel badges in Delivery Summary table ────────────────────────────── */
 
 .jcc-ds-ch-badge {
