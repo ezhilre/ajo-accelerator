@@ -1962,15 +1962,20 @@ function dsChannelBadge(channels) {
   return esc(channels.map(dsChannelLabel).join(', '));
 }
 
-function buildDsCsv(campaigns) {
-  const hdrs = ['Name', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
+function buildDsCsv(campaigns, cfg) {
+  const hdrs = ['Name', 'URL', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
   const rows = campaigns.map((c) => {
     const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
-    const channels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))].join(', ');
+    // Apply the same channel label mapping used in the UI
+    const channels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [dsChannelLabel(p.channel)] : [])))].join(', ');
     const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
     const modDate = c.modifiedAt ? new Date(Number(c.modifiedAt)).toISOString() : '';
+    const campUrl = cfg
+      ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`
+      : '';
     return [
       c.name || '',
+      campUrl,
       c.description || '',
       tags,
       channels,
@@ -2243,7 +2248,7 @@ function showDeliverySummary(root, cfg) {
     if (!campaigns.length) return;
     const { year, month } = months[selectedIdx];
     const label = monthLabel(year, month).replace(/\s+/g, '-');
-    triggerDownload(buildDsCsv(campaigns), `delivery-summary-${label}.csv`);
+    triggerDownload(buildDsCsv(campaigns, cfg), `delivery-summary-${label}.csv`);
   });
 }
 
