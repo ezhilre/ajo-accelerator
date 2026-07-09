@@ -1898,6 +1898,7 @@ async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
         campaignId: c.id,
         name: c.name,
         description: c.description,
+        tags: c.tags || [],
         status: c.custom?.status || '',
         createdBy: c.createdby,
         createdByName: c.createdby,
@@ -1907,6 +1908,7 @@ async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
         publishedAt: c.custom?.trueStartDate || c.modified,
         packages: (c.custom?.channels || []).map((ch) => ({ channel: ch })),
         campaignType: c.custom?.campaignType || '',
+        versionId: c.custom?.versionId || '',
       });
     });
   }
@@ -1933,6 +1935,28 @@ function dsChannelBadge(channels) {
   return [...new Set(channels)].map((ch) => `<span class="jcc-ds-ch-badge jcc-ds-ch-${(ch || '').toLowerCase()}">${esc(ch || '?')}</span>`).join(' ');
 }
 
+function buildDsCsv(campaigns) {
+  const hdrs = ['Name', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
+  const rows = campaigns.map((c) => {
+    const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
+    const channels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))].join(', ');
+    const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
+    const modDate = c.modifiedAt ? new Date(Number(c.modifiedAt)).toISOString() : '';
+    return [
+      c.name || '',
+      c.description || '',
+      tags,
+      channels,
+      c.versionId || '',
+      c.status || '',
+      c.createdByName || c.createdBy || '',
+      pubDate,
+      modDate,
+    ].map(csvQ).join(',');
+  });
+  return [hdrs.map(csvQ).join(','), ...rows].join('\r\n');
+}
+
 function showDeliverySummary(root, cfg) {
   root.innerHTML = '';
   const wrap = document.createElement('div');
@@ -1945,6 +1969,7 @@ function showDeliverySummary(root, cfg) {
   let campaigns = [];
   let filterQ = '';
   let filterStatus = 'all';
+  let filterChannel = 'all';
 
   // Build month dropdown HTML
   function monthDropHtml() {
@@ -1977,6 +2002,10 @@ function showDeliverySummary(root, cfg) {
     const q = filterQ.toLowerCase();
     const filtered = campaigns.filter((c) => {
       if (filterStatus !== 'all' && (c.status || '').toUpperCase() !== filterStatus) return false;
+      if (filterChannel !== 'all') {
+        const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
+        if (!channels.some((ch) => (ch || '').toLowerCase() === filterChannel)) return false;
+      }
       if (q) {
         const hay = [c.name, c.campaignId, c.campaignType, c.createdByName, c.createdBy].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -1998,13 +2027,14 @@ function showDeliverySummary(root, cfg) {
       const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
       const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
+      const campUrl = `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`;
       return `<tr class="jcc-row">
-        <td class="jcc-cn" title="${esc(c.name || '')}"><span>${esc(c.name || '\u2014')}</span></td>
+        <td class="jcc-cn" title="${esc(c.name || '')}"><a class="jcc-go-btn" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
         <td>${dsChannelBadge(channels)}</td>
         <td class="jcc-cp" title="${esc(c.createdByName || c.createdBy || '')}">${esc(c.createdByName || c.createdBy || '\u2014')}</td>
         <td class="jcc-cd">${pubDate}</td>
-        <td class="jcc-cd">${modDate}</td>
+        <td class="jcc-mono" style="font-size:0.75rem;color:#4b4b4b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.versionId || '')}">${esc(c.versionId || '\u2014')}</td>
       </tr>`;
     }).join('');
   }
@@ -2038,13 +2068,25 @@ function showDeliverySummary(root, cfg) {
               <option value="STOPPED"${filterStatus === 'STOPPED' ? ' selected' : ''}>Stopped</option>
             </select>
           </div>
+          <div class="jcc-fg"><label for="jcc-ds-cf">Channel</label>
+            <select id="jcc-ds-cf" class="jcc-sel">
+              <option value="all"${filterChannel === 'all' ? ' selected' : ''}>All Channels</option>
+              <option value="email"${filterChannel === 'email' ? ' selected' : ''}>Email</option>
+              <option value="sms"${filterChannel === 'sms' ? ' selected' : ''}>SMS</option>
+              <option value="push"${filterChannel === 'push' ? ' selected' : ''}>Push</option>
+              <option value="in_app"${filterChannel === 'in_app' ? ' selected' : ''}>In-App</option>
+              <option value="code"${filterChannel === 'code' ? ' selected' : ''}>Code</option>
+              <option value="direct_mail"${filterChannel === 'direct_mail' ? ' selected' : ''}>Direct Mail</option>
+              <option value="web"${filterChannel === 'web' ? ' selected' : ''}>Web</option>
+            </select>
+          </div>
           <span id="jcc-ds-rc" class="jcc-rc"></span>
         </div>
       </div>
       <div class="jcc-tbl-wrap">
         <table class="jcc-tbl">
           <thead><tr>
-            <th>Name</th><th>Status</th><th>Channels</th><th>Owner</th><th>Published</th><th>Last Modified</th>
+            <th>Name</th><th>Status</th><th>Channels</th><th>Owner</th><th>Published</th><th>Version ID</th>
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
@@ -2070,6 +2112,7 @@ function showDeliverySummary(root, cfg) {
     });
     sqClrEl?.addEventListener('click', () => { sqEl.value = ''; filterQ = ''; sqClrEl.style.display = 'none'; renderTable(); });
     sfEl?.addEventListener('change', () => { filterStatus = sfEl.value; renderTable(); });
+    contentEl.querySelector('#jcc-ds-cf')?.addEventListener('change', (e) => { filterChannel = e.target.value; renderTable(); });
   }
 
   async function loadMonth() {
@@ -2078,6 +2121,7 @@ function showDeliverySummary(root, cfg) {
     campaigns = [];
     filterQ = '';
     filterStatus = 'all';
+    filterChannel = 'all';
     renderContent();
 
     const { year, month } = months[selectedIdx];
@@ -2098,6 +2142,9 @@ function showDeliverySummary(root, cfg) {
 
     loading = false;
     renderContent();
+    // Show/hide export button
+    const exportBtn = wrap.querySelector('#jcc-ds-export');
+    if (exportBtn) exportBtn.style.display = campaigns.length ? 'inline-flex' : 'none';
   }
 
   // ── Render shell ──────────────────────────────────────────────────────────
@@ -2115,6 +2162,7 @@ function showDeliverySummary(root, cfg) {
         ${monthDropHtml()}
       </div>
       <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch Campaigns</button>
+      <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
     </div>
     <div id="jcc-ds-content" class="jcc-ds-content">
       <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click <strong>Fetch Campaigns</strong> to load delivery data.</div>
@@ -2165,6 +2213,13 @@ function showDeliverySummary(root, cfg) {
   wireMonthDrop();
 
   wrap.querySelector('#jcc-ds-fetch').addEventListener('click', () => loadMonth());
+
+  wrap.querySelector('#jcc-ds-export').addEventListener('click', () => {
+    if (!campaigns.length) return;
+    const { year, month } = months[selectedIdx];
+    const label = monthLabel(year, month).replace(/\s+/g, '-');
+    triggerDownload(buildDsCsv(campaigns), `delivery-summary-${label}.csv`);
+  });
 }
 
 // ─── pre-dashboard placeholder ────────────────────────────────────────────────
