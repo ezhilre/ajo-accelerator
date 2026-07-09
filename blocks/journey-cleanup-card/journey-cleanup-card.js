@@ -1862,6 +1862,8 @@ async function fetchCampaignsWindow(cfg, page = 1) {
       authorization: `Bearer ${cfg.token}`,
       'x-api-key': 'exc_app',
       'x-gw-ims-org-id': cfg.orgId,
+      'x-sandbox-name': cfg.sandbox,
+      'x-gw-region': 'VA7',
     },
     body: JSON.stringify(body),
   });
