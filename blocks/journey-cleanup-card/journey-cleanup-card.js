@@ -1761,33 +1761,84 @@ function buildWeekWindows(year, month) {
   return windows;
 }
 
-// Fetch campaigns for a specific 7-day window via GraphQL
-async function fetchCampaignsWindow(cfg, startDate, endDate, page = 1) {
-  const startMs = startDate.getTime();
-  const endMs = endDate.getTime();
+// Fetch one page of campaigns (no date filter — date filtering done client-side)
+async function fetchCampaignsWindow(cfg, page = 1) {
+  const GQL_QUERY = `
+    query getCampaigns(
+      $cursor: String
+      $page: Int
+      $sort_by: String
+      $sort_order: String
+      $filters: [CampaignFilter]
+      $strictType: String
+    ) {
+      campaigns(
+        cursor: $cursor
+        page: $page
+        sort_by: $sort_by
+        sort_order: $sort_order
+        filters: $filters
+        strictType: $strictType
+      ) {
+        data {
+          name
+          description
+          campaignId
+          status
+          packages {
+            packageId
+            packageName
+            channel
+            enabled
+            status
+            attributes {
+              surfaceId
+              surface {
+                surfaceId
+                surfaceType
+                surfaceName
+              }
+            }
+          }
+          createdBy
+          createdByName
+          modifiedBy
+          modifiedByName
+          modifiedAt
+          publishedAt
+          displayStartDate
+          displayEndDate
+          priority
+          versionId
+          campaignType
+          campaignClass
+          category
+          draftVersionId
+        }
+        _page {
+          count
+          page
+          orderby
+          totalPages
+          totalCount
+        }
+        _links {
+          _self { href }
+          _next { href }
+        }
+      }
+    }
+  `;
+
   const body = {
     operationName: 'getCampaigns',
-    query: `
-    query getCampaigns($cursor: String $page: Int $sort_by: String $sort_order: String $filters: [CampaignFilter] $strictType: String) {
-      campaigns(cursor: $cursor page: $page sort_by: $sort_by sort_order: $sort_order filters: $filters strictType: $strictType) {
-        data {
-          name description campaignId status
-          packages { packageId packageName channel enabled status attributes { surfaceId surface { surfaceId surfaceType surfaceName } } }
-          createdBy createdByName modifiedBy modifiedByName modifiedAt publishedAt
-          displayStartDate displayEndDate priority versionId campaignType campaignClass category draftVersionId
-        }
-        _page { count page orderby totalPages totalCount }
-        _links { _self { href } _next { href } }
-      }
-    }`,
+    query: GQL_QUERY,
     variables: {
       sort_order: 'desc',
       sort_by: 'modifiedAt',
       filters: [{
         group: 'AND',
         status: { operator: 'eq', values: ['COMPLETED', 'STOPPED', 'LIVE'] },
-        trueStartDate: { operator: 'lte', values: [String(endMs)] },
-        trueEndDate: { operator: 'gte', values: [String(startMs)] },
       }],
       page,
       strictType: 'Scheduled',
@@ -1807,8 +1858,8 @@ async function fetchCampaignsWindow(cfg, startDate, endDate, page = 1) {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'accept': '*/*',
-      'authorization': `Bearer ${cfg.token}`,
+      accept: '*/*',
+      authorization: `Bearer ${cfg.token}`,
       'x-api-key': 'exc_app',
       'x-gw-ims-org-id': cfg.orgId,
     },
@@ -1817,37 +1868,44 @@ async function fetchCampaignsWindow(cfg, startDate, endDate, page = 1) {
 
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 120)}`);
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
   return res.json();
 }
 
-// Fetch ALL campaigns for a month by iterating 7-day windows (all pages per window)
+// Fetch ALL campaigns for a month:
+// - Paginates through all pages of the API
+// - Filters client-side to campaigns whose publishedAt or modifiedAt falls within the month
+// - Reports progress via onProgress callback
 async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
-  const windows = buildWeekWindows(year, month);
+  const monthStart = new Date(year, month - 1, 1).getTime();
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime(); // last ms of last day
   const seen = new Set();
   const campaigns = [];
 
-  for (let wi = 0; wi < windows.length; wi += 1) {
-    const { start, end } = windows[wi];
-    let page = 1;
-    let totalPages = 1;
-    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: campaigns.length });
+  let page = 1;
+  let totalPages = 1;
 
-    do {
-      const data = await fetchCampaignsWindow(cfg, start, end, page);
-      const pageData = data?.data?.campaigns?._page;
-      const items = data?.data?.campaigns?.data || [];
-      totalPages = pageData?.totalPages ?? 1;
-      items.forEach((c) => {
-        if (!seen.has(c.campaignId)) {
-          seen.add(c.campaignId);
-          campaigns.push(c);
-        }
-      });
-      page += 1;
-    } while (page <= totalPages);
-  }
+  do {
+    onProgress({ window: page, totalWindows: totalPages, loaded: campaigns.length });
+
+    const data = await fetchCampaignsWindow(cfg, page);
+    const pageData = data?.data?.campaigns?._page;
+    const items = data?.data?.campaigns?.data || [];
+    totalPages = pageData?.totalPages ?? 1;
+
+    // Client-side filter: keep campaigns active/published within the selected month
+    items.forEach((c) => {
+      if (seen.has(c.campaignId)) return;
+      const ts = Number(c.publishedAt || c.modifiedAt || 0);
+      if (ts >= monthStart && ts <= monthEnd) {
+        seen.add(c.campaignId);
+        campaigns.push(c);
+      }
+    });
+
+    page += 1;
+  } while (page <= totalPages);
 
   return campaigns;
 }
