@@ -2740,12 +2740,54 @@ a.jcc-go-btn:active,
   gap: 0.5rem;
 }
 
-/* ── Delivery Summary table column widths ───────────────────────────────── */
+/* ── Delivery Summary table layout — fixed columns to prevent overflow ───── */
+
+.jcc-ds-wrap .jcc-tbl {
+  table-layout: fixed;
+  min-width: 800px;
+}
+
+/* Col 1 – Name: 28% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(1),
+.jcc-ds-wrap .jcc-tbl td:nth-child(1) {
+  width: 28%;
+  overflow: hidden;
+}
+
+/* Col 2 – Status: 10% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(2),
+.jcc-ds-wrap .jcc-tbl td:nth-child(2) {
+  width: 10%;
+  white-space: nowrap;
+}
+
+/* Col 3 – Tags: 22% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(3),
+.jcc-ds-wrap .jcc-tbl td:nth-child(3) {
+  width: 22%;
+}
+
+/* Col 4 – Channels: 15% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(4),
+.jcc-ds-wrap .jcc-tbl td:nth-child(4) {
+  width: 15%;
+}
+
+/* Col 5 – Published: 16% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(5),
+.jcc-ds-wrap .jcc-tbl td:nth-child(5) {
+  width: 16%;
+  white-space: nowrap;
+}
+
+/* Col 6 – AI Insight: 9% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(6),
+.jcc-ds-wrap .jcc-tbl td:nth-child(6) {
+  width: 9%;
+}
 
 .jcc-ds-wrap .jcc-tbl .jcc-cn {
-  width: 320px;
-  max-width: 320px;
-  min-width: 180px;
+  overflow: hidden;
 }
 
 .jcc-ds-wrap .jcc-tbl .jcc-cn a {
@@ -2753,7 +2795,25 @@ a.jcc-go-btn:active,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 300px;
+}
+
+/* Tags cell — wrap badges naturally */
+.jcc-ds-tags-cell {
+  vertical-align: middle;
+  line-height: 1.6;
+}
+
+.jcc-ds-tag-badge {
+  display: inline-block;
+  background: #f0f4ff;
+  color: #1473e6;
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin: 0.1rem 0.15rem 0.1rem 0;
 }
 
 /* ── Channel badges in Delivery Summary table ────────────────────────────── */

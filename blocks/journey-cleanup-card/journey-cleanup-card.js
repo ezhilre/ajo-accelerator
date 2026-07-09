@@ -1930,9 +1930,26 @@ function dsCampaignStatusLabel(status) {
   return map[s] || (status || '\u2014');
 }
 
+const DS_CHANNEL_LABEL = {
+  messagefeed: 'Content Card',
+  message_feed: 'Content Card',
+  email: 'Email',
+  sms: 'SMS',
+  push: 'Push',
+  in_app: 'In-App',
+  inapp: 'In-App',
+  direct_mail: 'Direct Mail',
+  web: 'Web',
+  code: 'Code',
+};
+
+function dsChannelLabel(ch) {
+  return DS_CHANNEL_LABEL[(ch || '').toLowerCase()] || ch;
+}
+
 function dsChannelBadge(channels) {
   if (!channels || !channels.length) return '\u2014';
-  return esc(channels.join(', '));
+  return esc(channels.map(dsChannelLabel).join(', '));
 }
 
 function buildDsCsv(campaigns) {
@@ -2028,9 +2045,14 @@ function showDeliverySummary(root, cfg) {
       const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
       const campUrl = `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`;
+      const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean);
+      const tagsHtml = tags.length
+        ? tags.map((t) => `<span class="jcc-ds-tag-badge">${esc(t)}</span>`).join(' ')
+        : '\u2014';
       return `<tr class="jcc-row">
         <td class="jcc-cn" title="${esc(c.name || '')}"><a class="jcc-go-btn" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
+        <td class="jcc-ds-tags-cell">${tagsHtml}</td>
         <td>${dsChannelBadge(channels)}</td>
         <td class="jcc-cd">${pubDate}</td>
         <td style="font-size:0.75rem;color:#b3b3b3;font-style:italic">Coming soon</td>
@@ -2079,7 +2101,7 @@ function showDeliverySummary(root, cfg) {
       <div class="jcc-tbl-wrap">
         <table class="jcc-tbl">
           <thead><tr>
-            <th>Name</th><th>Status</th><th>Channels</th><th>Published</th><th>AI Insight</th>
+            <th>Name</th><th>Status</th><th>Tags</th><th>Channels</th><th>Published</th><th>AI Insight</th>
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
