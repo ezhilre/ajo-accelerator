@@ -234,6 +234,27 @@ function showModeSelect(root, cfg) {
       </div>
     </div>
 
+    <div class="jcc-ms-section">
+      <div class="jcc-ms-section-header">
+        <span class="jcc-ms-section-icon">&#x1F4CA;</span>
+        <span class="jcc-ms-section-title">AJO Delivery Report</span>
+      </div>
+      <div class="jcc-ms-cards">
+        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-del-summary" disabled>
+          <span class="jcc-ms-card-icon">&#x1F4CB;</span>
+          <span class="jcc-ms-card-title">Delivery Summary</span>
+          <span class="jcc-ms-card-desc">View aggregated delivery metrics across journeys &mdash; sent, delivered, opened, bounced and more.</span>
+          <span class="jcc-ms-coming-soon">Coming Soon</span>
+        </button>
+        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-del-channel" disabled>
+          <span class="jcc-ms-card-icon">&#x1F4E1;</span>
+          <span class="jcc-ms-card-title">Channel Breakdown</span>
+          <span class="jcc-ms-card-desc">Analyse performance by channel &mdash; Email, SMS, Push, In-App &mdash; with click-through and engagement rates.</span>
+          <span class="jcc-ms-coming-soon">Coming Soon</span>
+        </button>
+      </div>
+    </div>
+
     <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
   `;
   root.appendChild(wrap);
