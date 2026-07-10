@@ -1966,8 +1966,10 @@ function buildDsCsv(campaigns, cfg) {
   const hdrs = ['Name', 'URL', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
   const rows = campaigns.map((c) => {
     const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
-    // Apply the same channel label mapping used in the UI
-    const channels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [dsChannelLabel(p.channel)] : [])))].join(', ');
+    // Deduplicate raw API channel values first, THEN map to labels
+    // (deduplicating after mapping would collapse e.g. three "messagefeed" → one "Content Card")
+    const rawChannels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))];
+    const channels = rawChannels.map(dsChannelLabel).join(', ');
     const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
     const modDate = c.modifiedAt ? new Date(Number(c.modifiedAt)).toISOString() : '';
     const campUrl = cfg
@@ -2166,7 +2168,24 @@ function showDeliverySummary(root, cfg) {
     } catch (e) {
       loading = false;
       const contentEl = wrap.querySelector('#jcc-ds-content');
-      if (contentEl) contentEl.innerHTML = `<div class="jcc-err-banner">\u26A0 Error fetching campaigns: ${esc(e.message)}</div>`;
+      if (!contentEl) return;
+      const isAuthErr = e.message.includes('401') || e.message.includes('403') || e.message.includes('401013');
+      if (isAuthErr) {
+        contentEl.innerHTML = `
+          <div class="jcc-err-banner" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+            <span>\uD83D\uDD12 Access token expired or invalid &mdash; please update your credentials to continue.</span>
+            <button class="jcc-btn-primary" id="jcc-ds-update-token">\uD83D\uDD11 Update Access Token</button>
+          </div>
+        `;
+        contentEl.querySelector('#jcc-ds-update-token').addEventListener('click', () => {
+          showModal((nc) => {
+            Object.assign(cfg, nc);
+            showDeliverySummary(root, nc);
+          });
+        });
+      } else {
+        contentEl.innerHTML = `<div class="jcc-err-banner">\u26A0 Error fetching campaigns: ${esc(e.message)}</div>`;
+      }
       return;
     }
 
