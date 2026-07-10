@@ -2772,6 +2772,10 @@ a.jcc-go-btn:active,
 .jcc-ds-wrap .jcc-tbl th:nth-child(4),
 .jcc-ds-wrap .jcc-tbl td:nth-child(4) {
   width: 18%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 0; /* forces table-layout:fixed to respect width */
 }
 
 /* Col 5 – Channels: 14% */
@@ -2828,10 +2832,14 @@ a.jcc-go-btn:active,
   white-space: nowrap;
 }
 
-/* Tags cell — wrap badges naturally */
+/* Tags cell — truncate with ellipsis to prevent overflow */
 .jcc-ds-tags-cell {
   vertical-align: middle;
-  line-height: 1.6;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.82rem;
+  color: #4b4b4b;
 }
 
 .jcc-ds-tag-badge {

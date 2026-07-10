@@ -1973,7 +1973,9 @@ function buildDsCsv(campaigns, cfg) {
     const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
     const modDate = c.modifiedAt ? new Date(Number(c.modifiedAt)).toISOString() : '';
     const campUrl = cfg
-      ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`
+      ? (c._type === 'journey'
+        ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(c.campaignId)}`
+        : `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`)
       : '';
     const type = c._type === 'journey' ? 'Journey' : 'Campaign';
     return [
@@ -2086,14 +2088,14 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
         name: j.name,
         description: j.description,
         tags: j.tags || [],
-        status: j.custom?.state || '',
+        status: j.custom?.displayState || j.custom?.state || '',
         createdBy: j.createdby,
-        createdByName: j.createdby,
-        modifiedBy: j.modifiedby,
+        createdByName: j.custom?.createdByName || j.createdby,
+        modifiedBy: j.custom?.lastModifiedBy || j.modifiedby,
         modifiedAt: j.modified,
-        publishedAt: j.custom?.startDate || j.modified,
+        publishedAt: j.custom?.startDate ? String(j.custom.startDate) : j.modified,
         packages: (j.custom?.channels || []).map((ch) => ({ channel: ch })),
-        versionId: j.custom?.versionId || j.id,
+        versionId: j.id,
         _type: 'journey',
       });
     });
@@ -2172,7 +2174,9 @@ function showDeliverySummary(root, cfg) {
       const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
       const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
-      const campUrl = `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`;
+      const campUrl = c._type === 'journey'
+        ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(c.campaignId)}`
+        : `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`;
       const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean);
       const tagsHtml = tags.length ? esc(tags.join(', ')) : '\u2014';
       const typeLabel = c._type === 'journey' ? 'Journey' : 'Campaign';
