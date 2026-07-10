@@ -104,6 +104,59 @@ function fetchAll(cfg, onChunk, onErr, onDone) {
   return ctrl;
 }
 
+// ─── full-text hover modal ────────────────────────────────────────────────────
+
+function closeTextModal() { document.querySelector('.jcc-text-modal')?.remove(); }
+
+function showTextModal(anchorEl, fullText) {
+  closeTextModal();
+  const pop = document.createElement('div');
+  pop.className = 'jcc-text-modal';
+  pop.setAttribute('role', 'tooltip');
+  pop.innerHTML = `
+    <div class="jcc-text-modal-hdr">
+      <span class="jcc-text-modal-title">&#x1F4CB; Full Text</span>
+      <button class="jcc-text-modal-close" aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="jcc-text-modal-body">${esc(fullText)}</div>
+    <button class="jcc-text-modal-copy">&#x1F4CB; Copy</button>
+  `;
+  document.body.appendChild(pop);
+
+  const popW = 360;
+  const popH = pop.offsetHeight || 80;
+  const margin = 8;
+  const rect = anchorEl.getBoundingClientRect();
+
+  let top = rect.bottom + margin;
+  if (top + popH > window.innerHeight - 8) top = rect.top - popH - margin;
+  let left = rect.left;
+  left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+  pop.style.top = `${top + window.scrollY}px`;
+  pop.style.left = `${left}px`;
+  pop.style.width = `${popW}px`;
+
+  pop.querySelector('.jcc-text-modal-close').addEventListener('click', (e) => {
+    e.stopPropagation(); closeTextModal();
+  });
+  pop.querySelector('.jcc-text-modal-copy').addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(fullText).then(() => {
+      const btn = pop.querySelector('.jcc-text-modal-copy');
+      btn.textContent = '\u2713 Copied!';
+      setTimeout(() => { btn.textContent = '\uD83D\uDCCB Copy'; }, 1500);
+    });
+  });
+
+  function onOutside(e) {
+    if (!pop.contains(e.target) && e.target !== anchorEl) {
+      closeTextModal();
+      document.removeEventListener('click', onOutside, true);
+    }
+  }
+  setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+}
+
 // ─── tip popover ──────────────────────────────────────────────────────────────
 
 function closeTipPopover() { document.querySelector('.jcc-tip-popover')?.remove(); }
@@ -2254,7 +2307,7 @@ function showDeliverySummary(root, cfg) {
       const typeLabel = c._type === 'journey' ? 'Journey' : 'Campaign';
       const typeCls = c._type === 'journey' ? 'jcc-ds-type-journey' : 'jcc-ds-type-campaign';
       return `<tr class="jcc-row">
-        <td class="jcc-cn" title="${esc(c.name || '')}"><a class="jcc-go-btn" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.name || '\u2014')}</a></td>
+        <td class="jcc-cn"><a class="jcc-go-btn jcc-ds-name-link" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;vertical-align:bottom" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer" data-fullname="${esc(c.name || '')}">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
         <td><span class="jcc-ds-type-badge ${typeCls}">${typeLabel}</span></td>
         <td class="jcc-ds-tags-cell">${tagsHtml}</td>
@@ -2270,7 +2323,8 @@ function showDeliverySummary(root, cfg) {
     if (!contentEl) return;
 
     if (loading) {
-      contentEl.innerHTML = `<div class="jcc-ds-loading"><span class="jcc-ai-analyzing">\u23F3 Fetching campaigns for ${monthLabel(months[selectedIdx].year, months[selectedIdx].month)}\u2026</span><div id="jcc-ds-prog" class="jcc-ds-prog-wrap"><div class="jcc-ds-prog-bar"><div class="jcc-ds-prog-fill" id="jcc-ds-pf" style="width:0%"></div></div><span class="jcc-ds-prog-lbl" id="jcc-ds-pl">Starting\u2026</span></div></div>`;
+      const loadingLabel = selectedType === 'journey' ? 'journeys' : selectedType === 'both' ? 'campaigns & journeys' : 'campaigns';
+      contentEl.innerHTML = `<div class="jcc-ds-loading"><span class="jcc-ai-analyzing">\u23F3 Fetching ${loadingLabel} for ${monthLabel(months[selectedIdx].year, months[selectedIdx].month)}\u2026</span><div id="jcc-ds-prog" class="jcc-ds-prog-wrap"><div class="jcc-ds-prog-bar"><div class="jcc-ds-prog-fill" id="jcc-ds-pf" style="width:0%"></div></div><span class="jcc-ds-prog-lbl" id="jcc-ds-pl">Starting\u2026</span></div></div>`;
       return;
     }
 
@@ -2315,6 +2369,14 @@ function showDeliverySummary(root, cfg) {
     `;
 
     renderTable();
+
+    // Wire name-link hover → full-text modal (event delegation on content area)
+    contentEl.addEventListener('mouseover', (e) => {
+      const link = e.target.closest('.jcc-ds-name-link');
+      if (!link) return;
+      const fullName = link.dataset.fullname || link.textContent;
+      showTextModal(link, fullName);
+    });
 
     // Wire search & filter
     let sqT;
