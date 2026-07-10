@@ -1726,6 +1726,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 // ─── Delivery Summary ─────────────────────────────────────────────────────────
 
 const DS_GQL_URL = 'https://exc-unifiedcontent.experience.adobe.net/api/gql/app/ajoCampaignsApp/graphql?appId=ajoCampaignsApp';
+const DS_JOURNEY_GQL_URL = 'https://exc-unifiedcontent.experience.adobe.net/api/gql/app/cjm-journeys-next-admin/graphql?appId=cjm-journeys-next-admin';
 const DS_START_YEAR = 2026;
 const DS_START_MONTH = 1; // January
 
@@ -1963,11 +1964,10 @@ function dsChannelBadge(channels) {
 }
 
 function buildDsCsv(campaigns, cfg) {
-  const hdrs = ['Name', 'URL', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
+  const hdrs = ['Name', 'URL', 'Type', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
   const rows = campaigns.map((c) => {
     const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
     // Deduplicate raw API channel values first, THEN map to labels
-    // (deduplicating after mapping would collapse e.g. three "messagefeed" → one "Content Card")
     const rawChannels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))];
     const channels = rawChannels.map(dsChannelLabel).join(', ');
     const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
@@ -1975,9 +1975,11 @@ function buildDsCsv(campaigns, cfg) {
     const campUrl = cfg
       ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`
       : '';
+    const type = c._type === 'journey' ? 'Journey' : 'Campaign';
     return [
       c.name || '',
       campUrl,
+      type,
       c.description || '',
       tags,
       channels,
@@ -1991,6 +1993,114 @@ function buildDsCsv(campaigns, cfg) {
   return [hdrs.map(csvQ).join(','), ...rows].join('\r\n');
 }
 
+// Fetch journeys for a specific 7-day window
+async function fetchJourneysWindow(cfg, startDate, endDate) {
+  const startMs = startDate.getTime();
+  const endMs = endDate.getTime();
+
+  const GQL_QUERY = `
+    query searchV2($params: GlobalSearchRequestParams) {
+      globalSearch(params: $params) {
+        metrics { total_hits hits { hit capability } }
+        result_sets {
+          data {
+            id name labels description created createdby modified modifiedby custom
+            tags { id name tagCategoryId tagCategoryName }
+          }
+        }
+      }
+    }
+  `;
+
+  const body = {
+    operationName: 'searchV2',
+    query: GQL_QUERY,
+    variables: {
+      params: {
+        isPostNounFilter: false,
+        limit: 500,
+        start_index: 0,
+        sort_orderby: 'modified',
+        filters: {
+          standard: {
+            filterList: [
+              { filterName: 'noun', filterType: 'enum_values', anyOf: ['journey'] },
+              { filterName: 'sandboxname', filterType: 'enum_values', anyOf: [cfg.sandbox] },
+            ],
+          },
+          custom: [{
+            filterList: [
+              { filterName: 'startDate', filterType: 'datetime', max: String(endMs) },
+              { filterName: 'endDateTimeline', filterType: 'datetime', min: String(startMs) },
+              { filterName: 'state', filterType: 'enum_values', anyOf: ['deployed', 'redeployed', 'finishedEmpty', 'stopped'] },
+            ],
+            noun: 'journey',
+          }],
+        },
+      },
+    },
+    extensions: { clientContext: {} },
+    sandboxName: cfg.sandbox,
+    sandboxType: 'development',
+    isDefaultSandbox: 'false',
+  };
+
+  const res = await fetch(DS_JOURNEY_GQL_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: '*/*',
+      authorization: `Bearer ${cfg.token}`,
+      'x-api-key': 'exc_app',
+      'x-gw-ims-org-id': cfg.orgId,
+      'x-gw-region': 'VA7',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
+  const windows = buildWeekWindows(year, month);
+  const seen = new Set();
+  const journeys = [];
+
+  for (let wi = 0; wi < windows.length; wi += 1) {
+    const { start, end } = windows[wi];
+    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: journeys.length });
+
+    const data = await fetchJourneysWindow(cfg, start, end);
+    const resultSets = data?.data?.globalSearch?.result_sets || [];
+
+    resultSets.forEach((rs) => {
+      const j = rs?.data;
+      if (!j || !j.id || seen.has(j.id)) return;
+      seen.add(j.id);
+      journeys.push({
+        campaignId: j.id,
+        name: j.name,
+        description: j.description,
+        tags: j.tags || [],
+        status: j.custom?.state || '',
+        createdBy: j.createdby,
+        createdByName: j.createdby,
+        modifiedBy: j.modifiedby,
+        modifiedAt: j.modified,
+        publishedAt: j.custom?.startDate || j.modified,
+        packages: (j.custom?.channels || []).map((ch) => ({ channel: ch })),
+        versionId: j.custom?.versionId || j.id,
+        _type: 'journey',
+      });
+    });
+  }
+  return journeys;
+}
+
 function showDeliverySummary(root, cfg) {
   root.innerHTML = '';
   const wrap = document.createElement('div');
@@ -1998,6 +2108,7 @@ function showDeliverySummary(root, cfg) {
 
   const months = buildMonthOptions();
   let selectedIdx = 0; // index into months array (newest first)
+  let selectedType = 'campaign'; // 'journey' | 'campaign' | 'both'
   let dropOpen = false;
   let loading = false;
   let campaigns = [];
@@ -2063,12 +2174,13 @@ function showDeliverySummary(root, cfg) {
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
       const campUrl = `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`;
       const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean);
-      const tagsHtml = tags.length
-        ? tags.map((t) => `<span class="jcc-ds-tag-badge">${esc(t)}</span>`).join(' ')
-        : '\u2014';
+      const tagsHtml = tags.length ? esc(tags.join(', ')) : '\u2014';
+      const typeLabel = c._type === 'journey' ? 'Journey' : 'Campaign';
+      const typeCls = c._type === 'journey' ? 'jcc-ds-type-journey' : 'jcc-ds-type-campaign';
       return `<tr class="jcc-row">
         <td class="jcc-cn" title="${esc(c.name || '')}"><a class="jcc-go-btn" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
+        <td><span class="jcc-ds-type-badge ${typeCls}">${typeLabel}</span></td>
         <td class="jcc-ds-tags-cell">${tagsHtml}</td>
         <td>${dsChannelBadge(channels)}</td>
         <td class="jcc-cd">${pubDate}</td>
@@ -2118,7 +2230,7 @@ function showDeliverySummary(root, cfg) {
       <div class="jcc-tbl-wrap">
         <table class="jcc-tbl">
           <thead><tr>
-            <th>Name</th><th>Status</th><th>Tags</th><th>Channels</th><th>Published</th><th>AI Insight</th>
+            <th>Name</th><th>Status</th><th>Type</th><th>Tags</th><th>Channels</th><th>Published</th><th>AI Insight</th>
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
@@ -2157,14 +2269,41 @@ function showDeliverySummary(root, cfg) {
     renderContent();
 
     const { year, month } = months[selectedIdx];
+    const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
     try {
-      campaigns = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+      function onProg({ window: wi, totalWindows, loaded }) {
         const pf = wrap.querySelector('#jcc-ds-pf');
         const pl = wrap.querySelector('#jcc-ds-pl');
         const pct = Math.round((wi / totalWindows) * 100);
         if (pf) pf.style.width = `${pct}%`;
-        if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} campaigns loaded\u2026`;
-      });
+        if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} ${typeLabel} loaded\u2026`;
+      }
+
+      if (selectedType === 'campaign') {
+        campaigns = await fetchAllCampaignsForMonth(cfg, year, month, onProg);
+      } else if (selectedType === 'journey') {
+        campaigns = await fetchAllJourneysForMonth(cfg, year, month, onProg);
+      } else {
+        // Both — fetch sequentially so the progress bar is meaningful
+        const pf = wrap.querySelector('#jcc-ds-pf');
+        const pl = wrap.querySelector('#jcc-ds-pl');
+
+        // Phase 1: Campaigns (0–50%)
+        const camp = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+          const pct = Math.round((wi / totalWindows) * 50); // first half
+          if (pf) pf.style.width = `${pct}%`;
+          if (pl) pl.textContent = `[Campaigns] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+        });
+
+        // Phase 2: Journeys (50–100%)
+        const jour = await fetchAllJourneysForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+          const pct = 50 + Math.round((wi / totalWindows) * 50); // second half
+          if (pf) pf.style.width = `${pct}%`;
+          if (pl) pl.textContent = `[Journeys] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+        });
+
+        campaigns = [...camp, ...jour];
+      }
     } catch (e) {
       loading = false;
       const contentEl = wrap.querySelector('#jcc-ds-content');
@@ -2210,7 +2349,14 @@ function showDeliverySummary(root, cfg) {
       <div class="jcc-ds-month-area" id="jcc-ds-month-area">
         ${monthDropHtml()}
       </div>
-      <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch Campaigns</button>
+      <div class="jcc-fg">
+        <select id="jcc-ds-type" class="jcc-sel" style="font-size:1rem;padding:0.5rem 0.75rem;min-width:130px">
+          <option value="campaign"${selectedType === 'campaign' ? ' selected' : ''}>Campaign</option>
+          <option value="journey"${selectedType === 'journey' ? ' selected' : ''}>Journey</option>
+          <option value="both"${selectedType === 'both' ? ' selected' : ''}>Both</option>
+        </select>
+      </div>
+      <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch</button>
       <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
     </div>
     <div id="jcc-ds-content" class="jcc-ds-content">
@@ -2261,6 +2407,7 @@ function showDeliverySummary(root, cfg) {
 
   wireMonthDrop();
 
+  wrap.querySelector('#jcc-ds-type').addEventListener('change', (e) => { selectedType = e.target.value; });
   wrap.querySelector('#jcc-ds-fetch').addEventListener('click', () => loadMonth());
 
   wrap.querySelector('#jcc-ds-export').addEventListener('click', () => {

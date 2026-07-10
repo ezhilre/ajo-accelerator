@@ -2761,29 +2761,60 @@ a.jcc-go-btn:active,
   white-space: nowrap;
 }
 
-/* Col 3 – Tags: 22% */
+/* Col 3 – Type: 9% */
 .jcc-ds-wrap .jcc-tbl th:nth-child(3),
 .jcc-ds-wrap .jcc-tbl td:nth-child(3) {
-  width: 22%;
-}
-
-/* Col 4 – Channels: 15% */
-.jcc-ds-wrap .jcc-tbl th:nth-child(4),
-.jcc-ds-wrap .jcc-tbl td:nth-child(4) {
-  width: 15%;
-}
-
-/* Col 5 – Published: 16% */
-.jcc-ds-wrap .jcc-tbl th:nth-child(5),
-.jcc-ds-wrap .jcc-tbl td:nth-child(5) {
-  width: 16%;
+  width: 9%;
   white-space: nowrap;
 }
 
-/* Col 6 – AI Insight: 9% */
+/* Col 4 – Tags: 18% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(4),
+.jcc-ds-wrap .jcc-tbl td:nth-child(4) {
+  width: 18%;
+}
+
+/* Col 5 – Channels: 14% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(5),
+.jcc-ds-wrap .jcc-tbl td:nth-child(5) {
+  width: 14%;
+}
+
+/* Col 6 – Published: 14% */
 .jcc-ds-wrap .jcc-tbl th:nth-child(6),
 .jcc-ds-wrap .jcc-tbl td:nth-child(6) {
-  width: 9%;
+  width: 14%;
+  white-space: nowrap;
+}
+
+/* Col 7 – AI Insight: 7% */
+.jcc-ds-wrap .jcc-tbl th:nth-child(7),
+.jcc-ds-wrap .jcc-tbl td:nth-child(7) {
+  width: 7%;
+}
+
+/* Type badges */
+.jcc-ds-type-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.jcc-ds-type-campaign {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
+}
+
+.jcc-ds-type-journey {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #a5d6a7;
 }
 
 .jcc-ds-wrap .jcc-tbl .jcc-cn {
