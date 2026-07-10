@@ -2122,26 +2122,43 @@ async function fetchJourneysWindow(cfg, startDate, endDate) {
   return res.json();
 }
 
-// ── Channel prefix → label mapping (ordered longest-first to avoid prefix clashes) ──
-const JOURNEY_CHANNEL_PREFIXES = [
-  ['Push notification',     'Push notification'],
-  ['In-app message',        'In-app message'],
-  ['Code-based experience', 'Code-based experience'],
-  ['Mobile message',        'Mobile message'],
-  ['Content Card',          'Content Card'],
-  ['WhatsApp',              'WhatsApp'],
-  ['Email',                 'Email'],
-  ['Web',                   'Web'],
-  ['LINE',                  'LINE'],
+// ── Channel label mapping — keys are lowercase for case-insensitive matching ──
+// Ordered longest-first to avoid shorter prefixes shadowing longer ones (Rule 1).
+const JOURNEY_CHANNEL_LABELS = [
+  ['push notification',     'Push notification'],
+  ['in-app message',        'In-app message'],
+  ['code-based experience', 'Code-based experience'],
+  ['mobile message',        'Mobile message'],
+  ['content card',          'Content Card'],
+  ['whatsapp',              'WhatsApp'],
+  ['email',                 'Email'],
+  ['web',                   'Web'],
+  ['line',                  'LINE'],
 ];
 
 function extractChannelsFromJourneyDetail(detail) {
   const found = new Set();
   (detail.nodes || []).forEach((node) => {
     if (node.type !== 'campaign') return;
-    const name = node.name || '';
-    for (const [prefix, label] of JOURNEY_CHANNEL_PREFIXES) {
-      if (name.startsWith(prefix)) { found.add(label); break; }
+    const nameLower = (node.name || '').toLowerCase();
+
+    // Rule 1: case-insensitive starts-with (exact channel prefix)
+    let matched = false;
+    for (const [prefix, label] of JOURNEY_CHANNEL_LABELS) {
+      if (nameLower.startsWith(prefix)) {
+        found.add(label);
+        matched = true;
+        break;
+      }
+    }
+
+    // Rule 2: fallback — case-insensitive contains (catches reversed/custom names)
+    if (!matched) {
+      for (const [prefix, label] of JOURNEY_CHANNEL_LABELS) {
+        if (nameLower.includes(prefix)) {
+          found.add(label);
+        }
+      }
     }
   });
   return [...found].join(', ');
