@@ -113,48 +113,20 @@ function showTextModal(anchorEl, fullText) {
   const pop = document.createElement('div');
   pop.className = 'jcc-text-modal';
   pop.setAttribute('role', 'tooltip');
-  pop.innerHTML = `
-    <div class="jcc-text-modal-hdr">
-      <span class="jcc-text-modal-title">&#x1F4CB; Full Text</span>
-      <button class="jcc-text-modal-close" aria-label="Close">&#x2715;</button>
-    </div>
-    <div class="jcc-text-modal-body">${esc(fullText)}</div>
-    <button class="jcc-text-modal-copy">&#x1F4CB; Copy</button>
-  `;
+  pop.textContent = fullText;
   document.body.appendChild(pop);
 
-  const popW = 360;
-  const popH = pop.offsetHeight || 80;
-  const margin = 8;
+  const margin = 6;
   const rect = anchorEl.getBoundingClientRect();
+  const popW = Math.min(320, window.innerWidth - 16);
 
   let top = rect.bottom + margin;
-  if (top + popH > window.innerHeight - 8) top = rect.top - popH - margin;
+  if (top + 40 > window.innerHeight - 8) top = rect.top - pop.offsetHeight - margin;
   let left = rect.left;
   left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
   pop.style.top = `${top + window.scrollY}px`;
   pop.style.left = `${left}px`;
-  pop.style.width = `${popW}px`;
-
-  pop.querySelector('.jcc-text-modal-close').addEventListener('click', (e) => {
-    e.stopPropagation(); closeTextModal();
-  });
-  pop.querySelector('.jcc-text-modal-copy').addEventListener('click', (e) => {
-    e.stopPropagation();
-    navigator.clipboard?.writeText(fullText).then(() => {
-      const btn = pop.querySelector('.jcc-text-modal-copy');
-      btn.textContent = '\u2713 Copied!';
-      setTimeout(() => { btn.textContent = '\uD83D\uDCCB Copy'; }, 1500);
-    });
-  });
-
-  function onOutside(e) {
-    if (!pop.contains(e.target) && e.target !== anchorEl) {
-      closeTextModal();
-      document.removeEventListener('click', onOutside, true);
-    }
-  }
-  setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+  pop.style.maxWidth = `${popW}px`;
 }
 
 // ─── tip popover ──────────────────────────────────────────────────────────────
@@ -2387,12 +2359,27 @@ function showDeliverySummary(root, cfg) {
 
     renderTable();
 
-    // Wire name-link hover → full-text modal (event delegation on content area)
+    // Wire hover → simple text overlay for truncated Name and Tags cells
     contentEl.addEventListener('mouseover', (e) => {
+      // Name link
       const link = e.target.closest('.jcc-ds-name-link');
-      if (!link) return;
-      const fullName = link.dataset.fullname || link.textContent;
-      showTextModal(link, fullName);
+      if (link) {
+        if (link.scrollWidth > link.offsetWidth) {
+          showTextModal(link, link.dataset.fullname || link.textContent.trim());
+        }
+        return;
+      }
+      // Tags cell
+      const tagsCell = e.target.closest('.jcc-ds-tags-cell');
+      if (tagsCell && tagsCell.scrollWidth > tagsCell.offsetWidth) {
+        showTextModal(tagsCell, tagsCell.textContent.trim());
+      }
+    });
+    contentEl.addEventListener('mouseout', (e) => {
+      const leaving = e.target.closest('.jcc-ds-name-link, .jcc-ds-tags-cell');
+      if (leaving && !e.relatedTarget?.closest('.jcc-ds-name-link, .jcc-ds-tags-cell')) {
+        closeTextModal();
+      }
     });
 
     // Wire search & filter
@@ -2502,7 +2489,7 @@ function showDeliverySummary(root, cfg) {
       <button class="jcc-btn-sec jcc-ds-back" id="jcc-ds-back">\u2190 Back</button>
       <span class="jcc-ds-header-icon">\uD83D\uDCCB</span>
       <div>
-        <h2 class="jcc-ds-title">Delivery Summary</h2>
+        <h2 class="jcc-ds-title">Delivery Report</h2>
         <p class="jcc-ds-sub">Sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
       </div>
     </div>
