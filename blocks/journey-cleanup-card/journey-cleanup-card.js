@@ -1968,8 +1968,10 @@ function buildDsCsv(campaigns, cfg) {
   const rows = campaigns.map((c) => {
     const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
     // Deduplicate raw API channel values first, THEN map to labels
-    const rawChannels = [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))];
-    const channels = rawChannels.map(dsChannelLabel).join(', ');
+    // For journeys use the pre-resolved _channels string; for campaigns derive from packages
+    const channels = c._type === 'journey'
+      ? (c._channels || '')
+      : [...new Set((c.packages || []).flatMap((p) => (p.channel ? [p.channel] : [])))].map(dsChannelLabel).join(', ');
     const pubDate = c.publishedAt ? new Date(Number(c.publishedAt)).toISOString() : '';
     const modDate = c.modifiedAt ? new Date(Number(c.modifiedAt)).toISOString() : '';
     const campUrl = cfg
@@ -2067,6 +2069,45 @@ async function fetchJourneysWindow(cfg, startDate, endDate) {
   return res.json();
 }
 
+// ── Channel prefix → label mapping (ordered longest-first to avoid prefix clashes) ──
+const JOURNEY_CHANNEL_PREFIXES = [
+  ['Push notification',     'Push notification'],
+  ['In-app message',        'In-app message'],
+  ['Code-based experience', 'Code-based experience'],
+  ['Mobile message',        'Mobile message'],
+  ['Content Card',          'Content Card'],
+  ['WhatsApp',              'WhatsApp'],
+  ['Email',                 'Email'],
+  ['Web',                   'Web'],
+  ['LINE',                  'LINE'],
+];
+
+function extractChannelsFromJourneyDetail(detail) {
+  const found = new Set();
+  (detail.nodes || []).forEach((node) => {
+    if (node.type !== 'campaign') return;
+    const name = node.name || '';
+    for (const [prefix, label] of JOURNEY_CHANNEL_PREFIXES) {
+      if (name.startsWith(prefix)) { found.add(label); break; }
+    }
+  });
+  return [...found].join(', ');
+}
+
+async function fetchJourneyDetailForChannels(cfg, journeyId) {
+  const url = `${AJO_BASE}/${encodeURIComponent(journeyId)}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      'x-api-key': cfg.apiKey,
+      'x-gw-ims-org-id': cfg.orgId,
+      'x-sandbox-name': cfg.sandbox,
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
   const windows = buildWeekWindows(year, month);
   const seen = new Set();
@@ -2094,12 +2135,36 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
         modifiedBy: j.custom?.lastModifiedBy || j.modifiedby,
         modifiedAt: j.modified,
         publishedAt: j.custom?.startDate ? String(j.custom.startDate) : j.modified,
-        packages: (j.custom?.channels || []).map((ch) => ({ channel: ch })),
+        packages: [],
         versionId: j.id,
         _type: 'journey',
+        _channels: '', // resolved below via detail API
       });
     });
   }
+
+  // Phase 2: fetch journey details in parallel batches of 5 to extract channel info
+  const BATCH = 5;
+  for (let i = 0; i < journeys.length; i += BATCH) {
+    const batch = journeys.slice(i, i + BATCH);
+    onProgress({
+      window: windows.length,
+      totalWindows: windows.length,
+      loaded: journeys.length,
+      detailPhase: true,
+      detailDone: i,
+      detailTotal: journeys.length,
+    });
+    await Promise.all(batch.map(async (j) => {
+      try {
+        const detail = await fetchJourneyDetailForChannels(cfg, j.campaignId);
+        j._channels = extractChannelsFromJourneyDetail(detail);
+      } catch (_) {
+        j._channels = '';
+      }
+    }));
+  }
+
   return journeys;
 }
 
@@ -2171,7 +2236,14 @@ function showDeliverySummary(root, cfg) {
 
     tbody.innerHTML = filtered.map((c) => {
       const sCls = dsCampaignStatusCls(c.status);
-      const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
+      // For journeys, channels come from the detail API (_channels string).
+      // For campaigns, derive from packages array as before.
+      const channelDisplay = c._type === 'journey'
+        ? (c._channels || '\u2014')
+        : (() => {
+          const chs = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
+          return chs.length ? esc(chs.map(dsChannelLabel).join(', ')) : '\u2014';
+        })();
       const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
       const campUrl = c._type === 'journey'
@@ -2186,7 +2258,7 @@ function showDeliverySummary(root, cfg) {
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
         <td><span class="jcc-ds-type-badge ${typeCls}">${typeLabel}</span></td>
         <td class="jcc-ds-tags-cell">${tagsHtml}</td>
-        <td>${dsChannelBadge(channels)}</td>
+        <td>${channelDisplay}</td>
         <td class="jcc-cd">${pubDate}</td>
         <td style="font-size:0.75rem;color:#b3b3b3;font-style:italic">Coming soon</td>
       </tr>`;
@@ -2275,12 +2347,18 @@ function showDeliverySummary(root, cfg) {
     const { year, month } = months[selectedIdx];
     const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
     try {
-      function onProg({ window: wi, totalWindows, loaded }) {
+      function onProg({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) {
         const pf = wrap.querySelector('#jcc-ds-pf');
         const pl = wrap.querySelector('#jcc-ds-pl');
-        const pct = Math.round((wi / totalWindows) * 100);
-        if (pf) pf.style.width = `${pct}%`;
-        if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} ${typeLabel} loaded\u2026`;
+        if (detailPhase) {
+          const pct = Math.round((detailDone / detailTotal) * 100);
+          if (pf) pf.style.width = `${pct}%`;
+          if (pl) pl.textContent = `\uD83D\uDD0D Fetching channel details\u2026 ${detailDone}/${detailTotal}`;
+        } else {
+          const pct = Math.round((wi / totalWindows) * 100);
+          if (pf) pf.style.width = `${pct}%`;
+          if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} ${typeLabel} loaded\u2026`;
+        }
       }
 
       if (selectedType === 'campaign') {
