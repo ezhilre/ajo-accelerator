@@ -2109,7 +2109,7 @@ function showDeliverySummary(root, cfg) {
           <div class="jcc-fg"><label for="jcc-ds-cf">Channel</label>
             <select id="jcc-ds-cf" class="jcc-sel">
               <option value="all"${filterChannel === 'all' ? ' selected' : ''}>All Channels</option>
-              ${[...new Set(campaigns.flatMap((c) => (c.packages || []).flatMap((p) => (p.channel ? [p.channel] : []))))].sort().map((ch) => `<option value="${esc(ch.toLowerCase())}"${filterChannel === ch.toLowerCase() ? ' selected' : ''}>${esc(ch)}</option>`).join('')}
+              ${[...new Set(campaigns.flatMap((c) => (c.packages || []).flatMap((p) => (p.channel ? [p.channel] : []))))].sort().map((ch) => `<option value="${esc(ch.toLowerCase())}"${filterChannel === ch.toLowerCase() ? ' selected' : ''}>${esc(dsChannelLabel(ch))}</option>`).join('')}
             </select>
           </div>
           <span id="jcc-ds-rc" class="jcc-rc"></span>
