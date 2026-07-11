@@ -1910,6 +1910,7 @@ async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
 
   for (let wi = 0; wi < windows.length; wi += 1) {
     const { start, end } = windows[wi];
+    // Report before fetch so the step label updates immediately
     onProgress({ window: wi + 1, totalWindows: windows.length, loaded: campaigns.length });
 
     const data = await fetchCampaignsWindow(cfg, start, end);
@@ -1938,6 +1939,8 @@ async function fetchAllCampaignsForMonth(cfg, year, month, onProgress) {
         versionId: c.custom?.versionId || '',
       });
     });
+    // Report after push so the updated count is reflected
+    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: campaigns.length });
   }
 
   return campaigns;
@@ -2190,6 +2193,7 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
 
   for (let wi = 0; wi < windows.length; wi += 1) {
     const { start, end } = windows[wi];
+    // Report BEFORE fetch so UI shows "Window X / Y — N loaded" with current count
     onProgress({ window: wi + 1, totalWindows: windows.length, loaded: journeys.length });
 
     const data = await fetchJourneysWindow(cfg, start, end);
@@ -2216,6 +2220,8 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
         _channels: '', // resolved below via detail API
       });
     });
+    // Report AFTER push so final window shows the real accumulated count
+    onProgress({ window: wi + 1, totalWindows: windows.length, loaded: journeys.length });
   }
 
   // Phase 2: fetch journey details in parallel batches of 5 to extract channel info
