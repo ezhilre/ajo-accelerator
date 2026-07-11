@@ -2274,7 +2274,24 @@ function showDeliverySummary(root, cfg) {
       return true;
     });
 
-    if (rcEl) rcEl.textContent = `${filtered.length} campaign${filtered.length !== 1 ? 's' : ''}${filtered.length !== campaigns.length ? ` of ${campaigns.length}` : ''}`;
+    // Build a type-aware count label
+    if (rcEl) {
+      if (selectedType === 'both') {
+        const campCount = filtered.filter((c) => c._type !== 'journey').length;
+        const jourCount = filtered.filter((c) => c._type === 'journey').length;
+        const totalCamp = campaigns.filter((c) => c._type !== 'journey').length;
+        const totalJour = campaigns.filter((c) => c._type === 'journey').length;
+        const campLabel = campCount !== totalCamp ? `${campCount} of ${totalCamp} campaigns` : `${campCount} campaign${campCount !== 1 ? 's' : ''}`;
+        const jourLabel = jourCount !== totalJour ? `${jourCount} of ${totalJour} journeys` : `${jourCount} journey${jourCount !== 1 ? 's' : ''}`;
+        rcEl.textContent = `${campLabel} · ${jourLabel}`;
+      } else if (selectedType === 'journey') {
+        const noun = filtered.length !== 1 ? 'journeys' : 'journey';
+        rcEl.textContent = filtered.length !== campaigns.length ? `${filtered.length} of ${campaigns.length} ${noun}` : `${filtered.length} ${noun}`;
+      } else {
+        const noun = filtered.length !== 1 ? 'campaigns' : 'campaign';
+        rcEl.textContent = filtered.length !== campaigns.length ? `${filtered.length} of ${campaigns.length} ${noun}` : `${filtered.length} ${noun}`;
+      }
+    }
 
     if (!filtered.length) {
       tbody.innerHTML = '';
@@ -2536,7 +2553,7 @@ function showDeliverySummary(root, cfg) {
       <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
     </div>
     <div id="jcc-ds-content" class="jcc-ds-content">
-      <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click <strong>Fetch Campaigns</strong> to load delivery data.</div>
+      <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click <strong> Fetch </strong> to load delivery data.</div>
     </div>
   `;
   root.appendChild(wrap);
