@@ -2791,10 +2791,6 @@ function showDeliverySummary(root, cfg) {
     if (loading) return;
     loading = true;
 
-    // Disable Fetch button while running to prevent re-entry
-    const fetchBtn = wrap.querySelector('#jcc-ds-fetch');
-    if (fetchBtn) { fetchBtn.disabled = true; fetchBtn.textContent = '⏳ Loading…'; }
-
     campaigns = [];
     dsAiScores.clear();
     dsAiExpanded.clear();
@@ -2820,6 +2816,7 @@ function showDeliverySummary(root, cfg) {
       } catch (_) { /* ignore */ }
       if (snap && snap.campaigns && snap.campaigns.length) {
         loading = false;
+        // Cache hit — button stays enabled (no live fetch)
         campaigns = snap.campaigns;
         const restoredScores = hydrateDeliveryScores(snap.aiScores);
         restoredScores.forEach((v, k) => dsAiScores.set(k, v));
@@ -2838,6 +2835,10 @@ function showDeliverySummary(root, cfg) {
       }
     }
     // (loading spinner already showing — continue with live fetch)
+
+    // Live fetch — disable button to prevent re-entry
+    const fetchBtn = wrap.querySelector('#jcc-ds-fetch');
+    if (fetchBtn) { fetchBtn.disabled = true; fetchBtn.textContent = '⏳ Loading…'; }
 
     const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
 
