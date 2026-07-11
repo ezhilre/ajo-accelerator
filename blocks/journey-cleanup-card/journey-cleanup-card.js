@@ -2257,8 +2257,15 @@ function showDeliverySummary(root, cfg) {
     const filtered = campaigns.filter((c) => {
       if (filterStatus !== 'all' && (c.status || '').toUpperCase() !== filterStatus) return false;
       if (filterChannel !== 'all') {
-        const channels = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
-        if (!channels.some((ch) => (ch || '').toLowerCase() === filterChannel)) return false;
+        if (c._type === 'journey') {
+          // Journey channels are a comma-separated label string — match against lowercased label
+          const journeyChannels = (c._channels || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+          if (!journeyChannels.includes(filterChannel)) return false;
+        } else {
+          // Campaign channels come from packages array
+          const campChannels = (c.packages || []).flatMap((p) => (p.channel ? [dsChannelLabel(p.channel).toLowerCase()] : []));
+          if (!campChannels.includes(filterChannel)) return false;
+        }
       }
       if (q) {
         const hay = [c.name, c.campaignId, c.campaignType, c.createdByName, c.createdBy].join(' ').toLowerCase();
@@ -2340,7 +2347,22 @@ function showDeliverySummary(root, cfg) {
           <div class="jcc-fg"><label for="jcc-ds-cf">Channel</label>
             <select id="jcc-ds-cf" class="jcc-sel">
               <option value="all"${filterChannel === 'all' ? ' selected' : ''}>All Channels</option>
-              ${[...new Set(campaigns.flatMap((c) => (c.packages || []).flatMap((p) => (p.channel ? [p.channel] : []))))].sort().map((ch) => `<option value="${esc(ch.toLowerCase())}"${filterChannel === ch.toLowerCase() ? ' selected' : ''}>${esc(dsChannelLabel(ch))}</option>`).join('')}
+              ${(() => {
+                // Collect channels from both campaign packages AND journey _channels strings
+                const allChannels = new Set();
+                campaigns.forEach((c) => {
+                  if (c._type === 'journey') {
+                    // _channels is a comma-separated label string e.g. "Email, WhatsApp"
+                    (c._channels || '').split(',').map((s) => s.trim()).filter(Boolean).forEach((lbl) => allChannels.add(lbl));
+                  } else {
+                    (c.packages || []).forEach((p) => { if (p.channel) allChannels.add(dsChannelLabel(p.channel)); });
+                  }
+                });
+                return [...allChannels].sort().map((lbl) => {
+                  const val = lbl.toLowerCase();
+                  return `<option value="${esc(val)}"${filterChannel === val ? ' selected' : ''}>${esc(lbl)}</option>`;
+                }).join('');
+              })()}
             </select>
           </div>
           <span id="jcc-ds-rc" class="jcc-rc"></span>
@@ -2444,10 +2466,16 @@ function showDeliverySummary(root, cfg) {
         });
 
         // Phase 2: Journeys (50–100%)
-        const jour = await fetchAllJourneysForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
-          const pct = 50 + Math.round((wi / totalWindows) * 50); // second half
-          if (pf) pf.style.width = `${pct}%`;
-          if (pl) pl.textContent = `[Journeys] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+        const jour = await fetchAllJourneysForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) => {
+          if (detailPhase) {
+            const pct = 50 + Math.round((detailDone / detailTotal) * 50);
+            if (pf) pf.style.width = `${pct}%`;
+            if (pl) pl.textContent = `\uD83D\uDD0D [Journeys] Fetching channel details\u2026 ${detailDone}/${detailTotal}`;
+          } else {
+            const pct = 50 + Math.round((wi / totalWindows) * 50); // second half
+            if (pf) pf.style.width = `${pct}%`;
+            if (pl) pl.textContent = `[Journeys] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+          }
         });
 
         campaigns = [...camp, ...jour];
