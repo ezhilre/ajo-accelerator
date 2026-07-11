@@ -2878,6 +2878,20 @@ a.jcc-go-btn:active,
 .jcc-ds-ch-direct_mail { background: #fce4ec; color: #ad1457; border-color: #f48fb1; }
 .jcc-ds-ch-web      { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
 
+/* ── AI Insight cell in Delivery Summary table ───────────────────────────── */
+
+.jcc-ds-ai-cell {
+  vertical-align: top;
+  max-width: 280px;
+}
+
+.jcc-ds-ai-summary {
+  font-size: 0.75rem;
+  color: #2c2c2c;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 /* ── full-text hover tooltip (truncated name / tags) ────────────────────── */
 
 .jcc-text-modal {

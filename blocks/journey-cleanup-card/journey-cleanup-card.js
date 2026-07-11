@@ -2224,6 +2224,10 @@ function showDeliverySummary(root, cfg) {
   let filterQ = '';
   let filterStatus = 'all';
   let filterChannel = 'all';
+  let aiInsightEnabled = false; // controlled by the AI Insight checkbox
+  const dsAiScores = new Map(); // journeyId → { llm } | 'pending' | 'error'
+  const aiSaved = getAiSettings();
+  let dsProxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
 
   // Build month dropdown HTML
   function monthDropHtml() {
@@ -2275,6 +2279,9 @@ function showDeliverySummary(root, cfg) {
     });
 
     // Build a type-aware count label
+    // AI Insight column header — only show for journey/both
+    const showAiCol = selectedType !== 'campaign';
+
     if (rcEl) {
       if (selectedType === 'both') {
         const campCount = filtered.filter((c) => c._type !== 'journey').length;
@@ -2302,15 +2309,12 @@ function showDeliverySummary(root, cfg) {
 
     tbody.innerHTML = filtered.map((c) => {
       const sCls = dsCampaignStatusCls(c.status);
-      // For journeys, channels come from the detail API (_channels string).
-      // For campaigns, derive from packages array as before.
       const channelDisplay = c._type === 'journey'
         ? (c._channels || '\u2014')
         : (() => {
           const chs = c.packages?.flatMap((p) => (p.channel ? [p.channel] : [])) || [];
           return chs.length ? esc(chs.map(dsChannelLabel).join(', ')) : '\u2014';
         })();
-      const modDate = c.modifiedAt ? fmtDate(new Date(Number(c.modifiedAt)).toISOString()) : '\u2014';
       const pubDate = c.publishedAt ? fmtDate(new Date(Number(c.publishedAt)).toISOString()) : '\u2014';
       const campUrl = c._type === 'journey'
         ? `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(c.campaignId)}`
@@ -2319,6 +2323,38 @@ function showDeliverySummary(root, cfg) {
       const tagsHtml = tags.length ? esc(tags.join(', ')) : '\u2014';
       const typeLabel = c._type === 'journey' ? 'Journey' : 'Campaign';
       const typeCls = c._type === 'journey' ? 'jcc-ds-type-journey' : 'jcc-ds-type-campaign';
+
+      // AI Insight cell — only meaningful for journeys
+      let aiCell = '';
+      if (showAiCol) {
+        if (c._type !== 'journey') {
+          aiCell = '<td style="font-size:0.75rem;color:#b3b3b3">\u2014</td>';
+        } else {
+          const ai = dsAiScores.get(c.campaignId);
+          if (ai === 'pending') {
+            aiCell = '<td><span class="jcc-ai-analyzing" style="font-size:0.78rem">\u23F3 Analyzing\u2026</span></td>';
+          } else if (ai === 'error') {
+            aiCell = '<td style="font-size:0.75rem;color:#c9252d">\u26A0 Failed</td>';
+          } else if (ai && ai.llm) {
+            const l = ai.llm;
+            const lines = [
+              l.useCaseSummary ? `\uD83D\uDCCB ${esc(l.useCaseSummary)}` : '',
+              l.targetAudience ? `\uD83D\uDC65 ${esc(l.targetAudience)}` : '',
+              [
+                l.recommendation ? `\uD83D\uDD01 ${esc(l.recommendation)}` : '',
+                l.businessValue ? `\uD83D\uDCA1 ${esc(l.businessValue)}` : '',
+              ].filter(Boolean).join(' · '),
+            ].filter(Boolean);
+            aiCell = `<td class="jcc-ds-ai-cell"><div class="jcc-ds-ai-summary">${lines.join('<br>')}</div></td>`;
+          } else if (aiInsightEnabled) {
+            // insight enabled but not yet scored (should be 'pending' — fallback)
+            aiCell = '<td><span class="jcc-ai-analyzing" style="font-size:0.78rem">\u23F3\u2026</span></td>';
+          } else {
+            aiCell = '<td style="font-size:0.75rem;color:#b3b3b3">\u2014</td>';
+          }
+        }
+      }
+
       return `<tr class="jcc-row">
         <td class="jcc-cn"><a class="jcc-go-btn jcc-ds-name-link" style="background:none;border:none;color:#1473e6;font-weight:500;padding:0;text-decoration:underline;font-size:0.875rem;display:inline;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;vertical-align:bottom" href="${esc(campUrl)}" target="_blank" rel="noopener noreferrer" data-fullname="${esc(c.name || '')}">${esc(c.name || '\u2014')}</a></td>
         <td><span class="jcc-st ${sCls}">${dsCampaignStatusLabel(c.status)}</span></td>
@@ -2326,7 +2362,7 @@ function showDeliverySummary(root, cfg) {
         <td class="jcc-ds-tags-cell">${tagsHtml}</td>
         <td>${channelDisplay}</td>
         <td class="jcc-cd">${pubDate}</td>
-        <td style="font-size:0.75rem;color:#b3b3b3;font-style:italic">Coming soon</td>
+        ${aiCell}
       </tr>`;
     }).join('');
   }
@@ -2388,7 +2424,8 @@ function showDeliverySummary(root, cfg) {
       <div class="jcc-tbl-wrap">
         <table class="jcc-tbl">
           <thead><tr>
-            <th>Name</th><th>Status</th><th>Type</th><th>Tags</th><th>Channels</th><th>Published</th><th>AI Insight</th>
+            <th>Name</th><th>Status</th><th>Type</th><th>Tags</th><th>Channels</th><th>Published</th>
+            ${showAiCol ? '<th>AI Insight</th>' : ''}
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
@@ -2440,10 +2477,39 @@ function showDeliverySummary(root, cfg) {
     contentEl.querySelector('#jcc-ds-cf')?.addEventListener('change', (e) => { filterChannel = e.target.value; renderTable(); });
   }
 
+  async function runDsAiInsight(journeyRows) {
+    if (!journeyRows.length) return;
+    const BATCH = 3;
+    const pf = wrap.querySelector('#jcc-ds-pf');
+    const pl = wrap.querySelector('#jcc-ds-pl');
+    for (let i = 0; i < journeyRows.length; i += BATCH) {
+      const batch = journeyRows.slice(i, i + BATCH);
+      // Mark as pending so renderTable shows spinner
+      batch.forEach((j) => { if (!dsAiScores.has(j.campaignId)) dsAiScores.set(j.campaignId, 'pending'); });
+      renderTable();
+      if (pf) pf.style.width = `${Math.round((i / journeyRows.length) * 100)}%`;
+      if (pl) pl.textContent = `\uD83E\uDD16 AI Insight: ${i}/${journeyRows.length} journeys\u2026`;
+      await Promise.all(batch.map(async (j) => {
+        try {
+          // scoreSingleLLM expects an object with `id` and journey fields
+          const journeyObj = { id: j.campaignId, name: j.name, status: j.status, metadata: { lastModifiedAt: j.modifiedAt } };
+          const llm = await scoreSingleLLM(journeyObj, dsProxyUrl);
+          dsAiScores.set(j.campaignId, { llm });
+        } catch (_) {
+          dsAiScores.set(j.campaignId, 'error');
+        }
+      }));
+      renderTable();
+    }
+    if (pf) pf.style.width = '100%';
+    if (pl) pl.textContent = `\u2705 AI Insight complete \u2014 ${journeyRows.length} journeys analyzed`;
+  }
+
   async function loadMonth() {
     if (loading) return;
     loading = true;
     campaigns = [];
+    dsAiScores.clear();
     filterQ = '';
     filterStatus = 'all';
     filterChannel = 'all';
@@ -2526,6 +2592,14 @@ function showDeliverySummary(root, cfg) {
     // Show/hide export button
     const exportBtn = wrap.querySelector('#jcc-ds-export');
     if (exportBtn) exportBtn.style.display = campaigns.length ? 'inline-flex' : 'none';
+
+    // Run AI insight if enabled
+    if (aiInsightEnabled) {
+      const journeyRows = campaigns.filter((c) => c._type === 'journey');
+      if (journeyRows.length) {
+        await runDsAiInsight(journeyRows);
+      }
+    }
   }
 
   // ── Render shell ──────────────────────────────────────────────────────────
@@ -2549,6 +2623,10 @@ function showDeliverySummary(root, cfg) {
           <option value="both"${selectedType === 'both' ? ' selected' : ''}>Both</option>
         </select>
       </div>
+      <label class="jcc-ai-toggle-lbl jcc-ds-ai-lbl" id="jcc-ds-ai-lbl" style="${selectedType === 'campaign' ? 'opacity:0.4;pointer-events:none' : ''}">
+        <input type="checkbox" id="jcc-ds-ai-chk"${aiInsightEnabled ? ' checked' : ''}${selectedType === 'campaign' ? ' disabled' : ''} />
+        <span>\uD83E\uDD16 AI Insight</span>
+      </label>
       <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch</button>
       <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
     </div>
@@ -2600,7 +2678,20 @@ function showDeliverySummary(root, cfg) {
 
   wireMonthDrop();
 
-  wrap.querySelector('#jcc-ds-type').addEventListener('change', (e) => { selectedType = e.target.value; });
+  wrap.querySelector('#jcc-ds-type').addEventListener('change', (e) => {
+    selectedType = e.target.value;
+    // Toggle AI Insight checkbox availability
+    const aiLbl = wrap.querySelector('#jcc-ds-ai-lbl');
+    const aiChkEl = wrap.querySelector('#jcc-ds-ai-chk');
+    if (aiLbl && aiChkEl) {
+      const isCampOnly = selectedType === 'campaign';
+      aiLbl.style.opacity = isCampOnly ? '0.4' : '1';
+      aiLbl.style.pointerEvents = isCampOnly ? 'none' : '';
+      aiChkEl.disabled = isCampOnly;
+      if (isCampOnly) { aiInsightEnabled = false; aiChkEl.checked = false; }
+    }
+  });
+  wrap.querySelector('#jcc-ds-ai-chk')?.addEventListener('change', (e) => { aiInsightEnabled = e.target.checked; });
   wrap.querySelector('#jcc-ds-fetch').addEventListener('click', () => loadMonth());
 
   wrap.querySelector('#jcc-ds-export').addEventListener('click', () => {
