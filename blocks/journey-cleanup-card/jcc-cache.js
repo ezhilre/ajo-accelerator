@@ -1,5 +1,5 @@
 /**
- * jcc-cache.js — IndexedDB snapshot persistence for Journey Cleanup Dashboard
+* jcc-cache.js — IndexedDB snapshot persistence for Journey Cleanup Dashboard
  *
  * Each sandbox gets its own snapshot record keyed by sandbox name.
  * Snapshots store: raw journey list + AI scores + metadata (timestamp, counts).
@@ -11,10 +11,13 @@
  */
 
 const DB_NAME = 'jcc_dashboard';
-const DB_VERSION = 1;
+const DB_VERSION = 2;           // bumped for delivery store
 const STORE = 'snapshots';
+const DS_STORE = 'delivery_snapshots'; // Delivery Report cache
 const STALE_DAYS = 90;
+const DS_STALE_DAYS = 3;        // delivery data stale after 3 days
 const MAX_SANDBOXES = 5;
+const MAX_DS_SNAPSHOTS = 20;    // max (sandbox × month) delivery snapshots
 
 // ── open / init DB ────────────────────────────────────────────────────────────
 
@@ -28,6 +31,9 @@ function openDb() {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'sandbox' });
+      }
+      if (!db.objectStoreNames.contains(DS_STORE)) {
+        db.createObjectStore(DS_STORE, { keyPath: 'key' }); // key = "sandbox:YYYY-MM"
       }
     };
     req.onsuccess = (e) => { _db = e.target.result; resolve(_db); };
@@ -212,4 +218,122 @@ export function fmtSnapshotDate(iso) {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+// ── Delivery Report cache ─────────────────────────────────────────────────────
+// Key: "<sandbox>:<YYYY-MM>"  e.g. "prod:2026-07"
+
+function dsKey(sandbox, year, month) {
+  return `${sandbox}:${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
+ * Save a Delivery Report snapshot (campaigns + AI scores for a sandbox+month).
+ * @param {string}   sandbox
+ * @param {number}   year
+ * @param {number}   month      1-based
+ * @param {string}   type       'campaign' | 'journey' | 'both'
+ * @param {Object[]} campaigns  normalised campaign/journey rows
+ * @param {Map}      aiScores   Map<id, {llm}|'pending'|'error'>
+ */
+export async function saveDeliverySnapshot(sandbox, year, month, type, campaigns, aiScores) {
+  const db = await openDb();
+  await _enforceDsLimit(db);
+
+  const scoresObj = {};
+  aiScores.forEach((v, k) => { scoresObj[k] = v; });
+
+  const now = new Date().toISOString();
+  const record = {
+    key: dsKey(sandbox, year, month),
+    sandbox,
+    year,
+    month,
+    type,
+    savedAt: now,
+    accessedAt: now,
+    count: campaigns.length,
+    aiScoredCount: [...aiScores.values()].filter((v) => v && v.llm).length,
+    campaigns,
+    aiScores: scoresObj,
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DS_STORE, 'readwrite');
+    tx.objectStore(DS_STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Load a Delivery Report snapshot.
+ * @param {string} sandbox
+ * @param {number} year
+ * @param {number} month  1-based
+ * @returns {Promise<Object|null>}
+ */
+export async function loadDeliverySnapshot(sandbox, year, month) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DS_STORE, 'readwrite');
+    const store = tx.objectStore(DS_STORE);
+    const req = store.get(dsKey(sandbox, year, month));
+    req.onsuccess = () => {
+      const record = req.result;
+      if (!record) { resolve(null); return; }
+      record.accessedAt = new Date().toISOString();
+      store.put(record);
+      const daysOld = Math.floor((Date.now() - new Date(record.savedAt).getTime()) / 86400000);
+      resolve({ ...record, daysOld, isStale: daysOld >= DS_STALE_DAYS });
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Delete a Delivery Report snapshot.
+ */
+export async function clearDeliverySnapshot(sandbox, year, month) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DS_STORE, 'readwrite');
+    tx.objectStore(DS_STORE).delete(dsKey(sandbox, year, month));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Evict oldest delivery snapshots when over MAX_DS_SNAPSHOTS.
+ */
+async function _enforceDsLimit(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DS_STORE, 'readwrite');
+    const store = tx.objectStore(DS_STORE);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = req.result || [];
+      if (all.length < MAX_DS_SNAPSHOTS) { resolve(); return; }
+      const sorted = [...all].sort((a, b) => {
+        const ta = a.accessedAt || a.savedAt || '';
+        const tb = b.accessedAt || b.savedAt || '';
+        return ta < tb ? -1 : ta > tb ? 1 : 0;
+      });
+      // Remove oldest until under limit
+      const toDelete = sorted.slice(0, all.length - MAX_DS_SNAPSHOTS + 1);
+      toDelete.forEach((r) => store.delete(r.key));
+      resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Restore a Map<id, {llm}> from a delivery snapshot aiScores plain object.
+ */
+export function hydrateDeliveryScores(aiScoresObj) {
+  const map = new Map();
+  Object.entries(aiScoresObj || {}).forEach(([k, v]) => map.set(k, v));
+  return map;
 }

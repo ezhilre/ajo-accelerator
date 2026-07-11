@@ -138,7 +138,17 @@ GOVERNANCE RULES (apply in priority order):
 3. Staleness influences retirement urgency only — not whether the journey had a legitimate purpose.
 4. Name tokens (test/copy/delete/old/v2) are WEAK signals. Strong structural evidence overrides naming completely.
 5. If journey has >=1 entry event AND >=1 condition AND >=1 message action → describe the real business intent.
-6. Test/POC requires: placeholder name AND trivial structure (<=1 node, no audience logic, no messaging).
+6. Test/POC classification is STRICT — BOTH conditions must be true simultaneously:
+   a. The journey name EXPLICITLY contains one of: test, poc, dev, debug, dummy, temp, sandbox, qa, uat, staging, trial, mock, fake, sample, placeholder
+   b. AND the structure is trivial: ≤1 node, no audience qualification, no message actions
+   If EITHER condition is missing → do NOT classify as Test/POC.
+7. The following are ALWAYS production journeys, NEVER Test/POC, regardless of name:
+   - Customer satisfaction surveys (CSAT, NPS, feedback, survey, satisfaction)
+   - Order/purchase confirmation or validation flows (checkout, order, payment, transaction, validation)
+   - Web flows, app flows, or digital experience journeys (web, mobile, app, express)
+   - Any journey with a clear customer-facing outcome described in the name
+   - Any journey with meaningful structure (conditions, audiences, message actions)
+   When a journey name contains "CSAT", "survey", "validation", "checkout", "order", "feedback" → classify by the customer lifecycle stage it serves (Post-purchase, Retention, Onboarding, etc.), NOT as Test/POC.
 
 WORKFLOW RICHNESS CALIBRATION:
 - Rich lifecycle workflow = audience qualification + condition branching + 2+ message actions + timing/wait steps

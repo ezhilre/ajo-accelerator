@@ -9,6 +9,7 @@ import {
 import {
   saveSnapshot, loadSnapshot, clearSnapshot, listSnapshots, getCacheCapacity,
   hydrateScores, fmtSnapshotDate,
+  saveDeliverySnapshot, loadDeliverySnapshot, clearDeliverySnapshot, hydrateDeliveryScores,
 } from './jcc-cache.js';
 
 const AJO_BASE = 'https://platform.adobe.io/ajo/journey';
@@ -1988,8 +1989,13 @@ function dsChannelBadge(channels) {
   return esc(channels.map(dsChannelLabel).join(', '));
 }
 
-function buildDsCsv(campaigns, cfg) {
-  const hdrs = ['Name', 'URL', 'Type', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At'];
+function buildDsCsv(campaigns, cfg, aiScoresMap) {
+  const hdrs = [
+    'Name', 'URL', 'Type', 'Description', 'Tags', 'Channels', 'Version ID', 'Status', 'Owner', 'Published At', 'Last Modified At',
+    // AI columns (populated for journey rows only when AI Insight was run)
+    'AI Journey Type', 'AI Lifecycle Stage', 'AI Use Case Summary', 'AI Target Audience',
+    'AI Customer Experience', 'AI Business Objective', 'AI Business Value', 'AI Recommendation',
+  ];
   const rows = campaigns.map((c) => {
     const tags = (c.tags || []).map((t) => t.name || '').filter(Boolean).join(', ');
     // Deduplicate raw API channel values first, THEN map to labels
@@ -2005,6 +2011,25 @@ function buildDsCsv(campaigns, cfg) {
         : `https://experience.adobe.com/#/@adobe-corpnew/sname:${encodeURIComponent(cfg.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(c.versionId || c.campaignId)}`)
       : '';
     const type = c._type === 'journey' ? 'Journey' : 'Campaign';
+
+    // AI fields — only for journeys with a successful LLM score
+    let aiJourneyType = ''; let aiLifecycle = ''; let aiSummary = ''; let aiAudience = '';
+    let aiCx = ''; let aiObjective = ''; let aiBizValue = ''; let aiRec = '';
+    if (c._type === 'journey' && aiScoresMap) {
+      const aiEntry = aiScoresMap.get(c.campaignId);
+      if (aiEntry && aiEntry.llm && !aiEntry.llm.error) {
+        const l = aiEntry.llm;
+        aiJourneyType = l.journeyType || '';
+        aiLifecycle   = l.lifecycleStage || '';
+        aiSummary     = l.useCaseSummary || '';
+        aiAudience    = l.targetAudience || '';
+        aiCx          = l.customerExperience || '';
+        aiObjective   = l.businessObjective || '';
+        aiBizValue    = l.businessValue || '';
+        aiRec         = l.recommendation || l.retirementLabel || '';
+      }
+    }
+
     return [
       c.name || '',
       campUrl,
@@ -2017,6 +2042,14 @@ function buildDsCsv(campaigns, cfg) {
       c.createdByName || c.createdBy || '',
       pubDate,
       modDate,
+      aiJourneyType,
+      aiLifecycle,
+      aiSummary,
+      aiAudience,
+      aiCx,
+      aiObjective,
+      aiBizValue,
+      aiRec,
     ].map(csvQ).join(',');
   });
   return [hdrs.map(csvQ).join(','), ...rows].join('\r\n');
@@ -2310,6 +2343,7 @@ function showDeliverySummary(root, cfg) {
   const dsAiExpanded = new Set(); // journey IDs with expanded AI summary panel
   const aiSaved = getAiSettings();
   let dsProxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
+  let dsCacheSaved = false; // prevent double-save within same session
 
   // Build month dropdown HTML
   function monthDropHtml() {
@@ -2593,17 +2627,70 @@ function showDeliverySummary(root, cfg) {
     if (pl) pl.textContent = `\u2705 AI Insight complete \u2014 ${journeyRows.length} journeys analyzed`;
   }
 
-  async function loadMonth() {
+  // ── Cache strip (shown above controls bar when loaded from cache) ─────────
+  function renderCacheStrip(snap) {
+    // Remove any existing strip first
+    wrap.querySelector('.jcc-ds-cache-strip')?.remove();
+    if (!snap) return;
+    const { year, month } = months[selectedIdx];
+    const label = monthLabel(year, month);
+    const staleWarn = snap.isStale ? ` <span class="jcc-snap-stale-txt"> ⚠ ${snap.daysOld}d old — consider refreshing</span>` : '';
+    const strip = document.createElement('div');
+    strip.className = `jcc-snap-info jcc-ds-cache-strip${snap.isStale ? ' jcc-snap-stale' : ''}`;
+    strip.innerHTML = `📦 Loaded from cache &nbsp;·&nbsp; <strong>${label}</strong> &nbsp;·&nbsp; Saved: <strong>${fmtSnapshotDate(snap.savedAt)}</strong> &nbsp;·&nbsp; ${snap.count} items${staleWarn} <button class="jcc-btn-sec jcc-snap-refresh jcc-ds-cache-refresh" style="margin-left:0.5rem">🔄 Refresh</button> <button class="jcc-btn-sec" id="jcc-ds-cache-clear" style="margin-left:0.25rem">🗑 Clear</button>`;
+    // Insert before the controls bar
+    const ctrlBar = wrap.querySelector('.jcc-ds-controls-bar');
+    if (ctrlBar) wrap.insertBefore(strip, ctrlBar);
+    strip.querySelector('.jcc-ds-cache-refresh').addEventListener('click', () => {
+      strip.remove();
+      dsCacheSaved = false;
+      loadMonth(true);
+    });
+    strip.querySelector('#jcc-ds-cache-clear').addEventListener('click', async () => {
+      try { await clearDeliverySnapshot(cfg.sandbox, year, month); } catch (_) { /* ignore */ }
+      strip.remove();
+    });
+  }
+
+  async function loadMonth(forceRefresh = false) {
     if (loading) return;
     loading = true;
     campaigns = [];
     dsAiScores.clear();
+    dsAiExpanded.clear();
     filterQ = '';
     filterStatus = 'all';
     filterChannel = 'all';
-    renderContent();
+    dsCacheSaved = false;
 
     const { year, month } = months[selectedIdx];
+
+    // ── Check cache first (unless forced refresh) ─────────────────────────
+    if (!forceRefresh) {
+      let snap = null;
+      try { snap = await loadDeliverySnapshot(cfg.sandbox, year, month); } catch (_) { /* ignore */ }
+      if (snap && snap.campaigns && snap.campaigns.length) {
+        loading = false;
+        campaigns = snap.campaigns;
+        const restoredScores = hydrateDeliveryScores(snap.aiScores);
+        restoredScores.forEach((v, k) => dsAiScores.set(k, v));
+        dsCacheSaved = true;
+        // Restore selected type from snapshot
+        if (snap.type) selectedType = snap.type;
+        // Re-sync the type dropdown
+        const typeEl = wrap.querySelector('#jcc-ds-type');
+        if (typeEl) typeEl.value = selectedType;
+        renderContent();
+        renderCacheStrip(snap);
+        // Show export button
+        const exportBtn = wrap.querySelector('#jcc-ds-export');
+        if (exportBtn) exportBtn.style.display = campaigns.length ? 'inline-flex' : 'none';
+        return;
+      }
+    }
+
+    renderContent(); // show loading state
+
     const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
     try {
       function onProg({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) {
@@ -2681,11 +2768,21 @@ function showDeliverySummary(root, cfg) {
     const exportBtn = wrap.querySelector('#jcc-ds-export');
     if (exportBtn) exportBtn.style.display = campaigns.length ? 'inline-flex' : 'none';
 
+    // Auto-save to cache after fetch (before AI so basic data is cached immediately)
+    if (!dsCacheSaved && campaigns.length) {
+      dsCacheSaved = true;
+      saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, campaigns, dsAiScores)
+        .catch(() => { /* ignore */ });
+    }
+
     // Run AI insight if enabled
     if (aiInsightEnabled) {
       const journeyRows = campaigns.filter((c) => c._type === 'journey');
       if (journeyRows.length) {
         await runDsAiInsight(journeyRows);
+        // Re-save with AI scores included
+        saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, campaigns, dsAiScores)
+          .catch(() => { /* ignore */ });
       }
     }
   }
@@ -2786,7 +2883,7 @@ function showDeliverySummary(root, cfg) {
     if (!campaigns.length) return;
     const { year, month } = months[selectedIdx];
     const label = monthLabel(year, month).replace(/\s+/g, '-');
-    triggerDownload(buildDsCsv(campaigns, cfg), `delivery-summary-${label}.csv`);
+    triggerDownload(buildDsCsv(campaigns, cfg, dsAiScores), `delivery-summary-${label}.csv`);
   });
 }
 

@@ -2791,10 +2791,11 @@ a.jcc-go-btn:active,
   white-space: nowrap;
 }
 
-/* Col 7 – AI Insight: 7% */
+/* Col 7 – AI Insight: 10% */
 .jcc-ds-wrap .jcc-tbl th:nth-child(7),
 .jcc-ds-wrap .jcc-tbl td:nth-child(7) {
-  width: 7%;
+  width: 10%;
+  text-align: center;
 }
 
 /* Type badges */
@@ -2883,17 +2884,22 @@ a.jcc-go-btn:active,
 .jcc-ds-ai-toggle-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  justify-content: center;
+  gap: 0.25rem;
   background: #f0f4ff;
   color: #1473e6;
   border: 1px solid #c9d8ff;
   border-radius: 12px;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.78rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.74rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
 
