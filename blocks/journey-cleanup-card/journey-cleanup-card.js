@@ -2686,6 +2686,11 @@ function showDeliverySummary(root, cfg) {
   async function loadMonth(forceRefresh = false) {
     if (loading) return;
     loading = true;
+
+    // Disable Fetch button while running to prevent re-entry
+    const fetchBtn = wrap.querySelector('#jcc-ds-fetch');
+    if (fetchBtn) { fetchBtn.disabled = true; fetchBtn.textContent = '⏳ Loading…'; }
+
     campaigns = [];
     dsAiScores.clear();
     dsAiExpanded.clear();
@@ -2702,7 +2707,13 @@ function showDeliverySummary(root, cfg) {
     // ── Check cache first (unless forced refresh) ─────────────────────────
     if (!forceRefresh) {
       let snap = null;
-      try { snap = await loadDeliverySnapshot(cfg.sandbox, year, month); } catch (_) { /* ignore */ }
+      try {
+        // Race the IDB lookup against a 2-second timeout so a hung IDB never blocks the fetch
+        snap = await Promise.race([
+          loadDeliverySnapshot(cfg.sandbox, year, month),
+          new Promise((resolve) => { setTimeout(() => resolve(null), 2000); }),
+        ]);
+      } catch (_) { /* ignore */ }
       if (snap && snap.campaigns && snap.campaigns.length) {
         loading = false;
         campaigns = snap.campaigns;
@@ -2805,6 +2816,8 @@ function showDeliverySummary(root, cfg) {
       }
     } catch (e) {
       loading = false;
+      const fb = wrap.querySelector('#jcc-ds-fetch');
+      if (fb) { fb.disabled = false; fb.textContent = '📥 Fetch'; }
       const contentEl = wrap.querySelector('#jcc-ds-content');
       if (!contentEl) return;
       const isAuthErr = e.message.includes('401') || e.message.includes('403') || e.message.includes('401013');
@@ -2828,6 +2841,8 @@ function showDeliverySummary(root, cfg) {
     }
 
     loading = false;
+    const fb2 = wrap.querySelector('#jcc-ds-fetch');
+    if (fb2) { fb2.disabled = false; fb2.textContent = '📥 Fetch'; }
     renderContent();
     // Show/hide export button
     const exportBtn = wrap.querySelector('#jcc-ds-export');
