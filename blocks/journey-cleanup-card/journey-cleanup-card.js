@@ -2221,6 +2221,76 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
   return journeys;
 }
 
+// ── Delivery Summary AI Summary panel (no Rule Signals) ──────────────────────
+
+const DS_AI_PLACEHOLDER = /^(none|not specified|n\/a|archive|low|unknown|tbd|-)$/i;
+
+function dsAiVal(v) {
+  // Returns the value if it's meaningful, null otherwise
+  if (!v || typeof v !== 'string') return null;
+  const trimmed = v.trim();
+  if (!trimmed || DS_AI_PLACEHOLDER.test(trimmed)) return null;
+  return trimmed;
+}
+
+function dsAiSummaryHtml(llm) {
+  if (!llm || llm.error) return '<p style="font-size:0.82rem;color:#6e6e6e;font-style:italic;margin:0">No AI summary available.</p>';
+
+  const rows = [];
+
+  // Journey type + lifecycle badges
+  const jtype = dsAiVal(llm.journeyType);
+  const lifecycle = dsAiVal(llm.lifecycleStage);
+  if (jtype || lifecycle) {
+    const badges = [
+      jtype ? `<span class="jcc-ds-ai-badge jcc-ds-ai-badge-type">${esc(jtype)}</span>` : '',
+      lifecycle ? `<span class="jcc-ds-ai-badge jcc-ds-ai-badge-lifecycle">${esc(lifecycle)}</span>` : '',
+    ].filter(Boolean).join(' ');
+    rows.push(`<div class="jcc-ds-ai-badges">${badges}</div>`);
+  }
+
+  // Narrative sections
+  const sections = [
+    ['📋', 'What it does', dsAiVal(llm.useCaseSummary)],
+    ['👥', 'Audience', dsAiVal(llm.targetAudience)],
+    ['🧑', 'Customer Experience', dsAiVal(llm.customerExperience)],
+    ['🎯', 'Behavior Targeted', dsAiVal(llm.behaviorTargeted)],
+    ['🏆', 'Business Objective', dsAiVal(llm.businessObjective)],
+    ['💬', 'Why it was built', dsAiVal(llm.whyBuilt)],
+  ];
+
+  sections.forEach(([icon, label, val]) => {
+    if (!val) return;
+    rows.push(`
+      <div class="jcc-ds-ai-section-row">
+        <div class="jcc-ds-ai-sec-lbl">${icon} ${label}</div>
+        <div class="jcc-ds-ai-sec-val">${esc(val)}</div>
+      </div>`);
+  });
+
+  // Business value + review priority chips
+  const bv = dsAiVal(llm.businessValue);
+  const rp = dsAiVal(llm.reviewPriority);
+  if (bv || rp) {
+    const chips = [
+      bv ? `<span class="jcc-ds-ai-chip">💡 Business Value: <strong>${esc(bv)}</strong></span>` : '',
+      rp ? `<span class="jcc-ds-ai-chip">📋 Review Priority: <strong>${esc(rp)}</strong></span>` : '',
+    ].filter(Boolean).join('');
+    rows.push(`<div class="jcc-ds-ai-chips">${chips}</div>`);
+  }
+
+  // Recommendation (keep/review only — skip archive/retire for delivery context)
+  const rec = dsAiVal(llm.recommendation);
+  const recLower = (rec || '').toLowerCase();
+  if (rec && recLower !== 'archive' && recLower !== 'retire' && recLower !== 'delete') {
+    const recCls = recLower.includes('keep') ? 'jcc-ai-rec-keep' : 'jcc-ai-rec-review';
+    rows.push(`<div class="jcc-ds-ai-rec"><span class="jcc-ai-recommendation ${recCls}">\uD83D\uDD01 ${esc(rec)}</span></div>`);
+  }
+
+  if (!rows.length) return '<p style="font-size:0.82rem;color:#6e6e6e;font-style:italic;margin:0">Insufficient data from AI for this journey.</p>';
+  return `<div class="jcc-ds-ai-summary-panel">${rows.join('')}</div>`;
+}
+
 function showDeliverySummary(root, cfg) {
   root.innerHTML = '';
   const wrap = document.createElement('div');
@@ -2237,6 +2307,7 @@ function showDeliverySummary(root, cfg) {
   let filterChannel = 'all';
   let aiInsightEnabled = false; // controlled by the AI Insight checkbox
   const dsAiScores = new Map(); // journeyId → { llm } | 'pending' | 'error'
+  const dsAiExpanded = new Set(); // journey IDs with expanded AI summary panel
   const aiSaved = getAiSettings();
   let dsProxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
 
@@ -2337,31 +2408,27 @@ function showDeliverySummary(root, cfg) {
 
       // AI Insight cell — only meaningful for journeys
       let aiCell = '';
+      let aiExpandRow = '';
       if (showAiCol) {
         if (c._type !== 'journey') {
-          aiCell = '<td style="font-size:0.75rem;color:#b3b3b3">\u2014</td>';
+          aiCell = '<td style="font-size:0.75rem;color:#b3b3b3;text-align:center">\u2014</td>';
         } else {
           const ai = dsAiScores.get(c.campaignId);
+          const isExp = dsAiExpanded.has(c.campaignId);
           if (ai === 'pending') {
             aiCell = '<td><span class="jcc-ai-analyzing" style="font-size:0.78rem">\u23F3 Analyzing\u2026</span></td>';
           } else if (ai === 'error') {
             aiCell = '<td style="font-size:0.75rem;color:#c9252d">\u26A0 Failed</td>';
           } else if (ai && ai.llm) {
-            const l = ai.llm;
-            const lines = [
-              l.useCaseSummary ? `\uD83D\uDCCB ${esc(l.useCaseSummary)}` : '',
-              l.targetAudience ? `\uD83D\uDC65 ${esc(l.targetAudience)}` : '',
-              [
-                l.recommendation ? `\uD83D\uDD01 ${esc(l.recommendation)}` : '',
-                l.businessValue ? `\uD83D\uDCA1 ${esc(l.businessValue)}` : '',
-              ].filter(Boolean).join(' · '),
-            ].filter(Boolean);
-            aiCell = `<td class="jcc-ds-ai-cell"><div class="jcc-ds-ai-summary">${lines.join('<br>')}</div></td>`;
+            aiCell = `<td style="text-align:center"><button class="jcc-ds-ai-toggle-btn${isExp ? ' jcc-ds-ai-toggle-btn-open' : ''}" data-id="${esc(c.campaignId)}">\u2728 Summary ${isExp ? '\u25B2' : '\u25BC'}</button></td>`;
+            if (isExp) {
+              const colSpan = showAiCol ? 7 : 6;
+              aiExpandRow = `<tr class="jcc-ds-ai-expand-row"><td colspan="${colSpan}" style="padding:0"><div class="jcc-ds-ai-expand-panel">${dsAiSummaryHtml(ai.llm)}</div></td></tr>`;
+            }
           } else if (aiInsightEnabled) {
-            // insight enabled but not yet scored (should be 'pending' — fallback)
             aiCell = '<td><span class="jcc-ai-analyzing" style="font-size:0.78rem">\u23F3\u2026</span></td>';
           } else {
-            aiCell = '<td style="font-size:0.75rem;color:#b3b3b3">\u2014</td>';
+            aiCell = '<td style="font-size:0.75rem;color:#b3b3b3;text-align:center">\u2014</td>';
           }
         }
       }
@@ -2374,8 +2441,18 @@ function showDeliverySummary(root, cfg) {
         <td>${channelDisplay}</td>
         <td class="jcc-cd">${pubDate}</td>
         ${aiCell}
-      </tr>`;
+      </tr>${aiExpandRow}`;
     }).join('');
+
+    // Wire AI summary toggle buttons (event delegation)
+    tbody.querySelectorAll('.jcc-ds-ai-toggle-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (dsAiExpanded.has(id)) dsAiExpanded.delete(id);
+        else dsAiExpanded.add(id);
+        renderTable();
+      });
+    });
   }
 
   function renderContent() {

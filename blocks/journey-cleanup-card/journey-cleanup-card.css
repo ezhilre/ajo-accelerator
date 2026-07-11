@@ -2878,18 +2878,150 @@ a.jcc-go-btn:active,
 .jcc-ds-ch-direct_mail { background: #fce4ec; color: #ad1457; border-color: #f48fb1; }
 .jcc-ds-ch-web      { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
 
-/* ── AI Insight cell in Delivery Summary table ───────────────────────────── */
+/* ── AI Summary toggle button (Delivery Summary table) ──────────────────── */
 
-.jcc-ds-ai-cell {
-  vertical-align: top;
-  max-width: 280px;
+.jcc-ds-ai-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #f0f4ff;
+  color: #1473e6;
+  border: 1px solid #c9d8ff;
+  border-radius: 12px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
 
-.jcc-ds-ai-summary {
-  font-size: 0.75rem;
+.jcc-ds-ai-toggle-btn:hover {
+  background: #e1e9ff;
+  border-color: #1473e6;
+  box-shadow: 0 1px 4px rgba(20, 115, 230, 0.2);
+}
+
+.jcc-ds-ai-toggle-btn-open {
+  background: #1473e6;
+  color: #fff;
+  border-color: #1473e6;
+}
+
+.jcc-ds-ai-toggle-btn-open:hover {
+  background: #0d66d0;
+  border-color: #0d66d0;
+}
+
+/* ── AI Summary expand row ───────────────────────────────────────────────── */
+
+.jcc-ds-ai-expand-row td {
+  background: linear-gradient(135deg, #f7f5ff 0%, #f0f6ff 100%);
+  border-bottom: 2px solid #c9d8ff;
+}
+
+.jcc-ds-ai-expand-panel {
+  padding: 1rem 1.25rem 1.1rem;
+}
+
+/* ── AI Summary panel content ────────────────────────────────────────────── */
+
+.jcc-ds-ai-summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.jcc-ds-ai-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.1rem;
+}
+
+.jcc-ds-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.jcc-ds-ai-badge-type {
+  background: #f3e5f5;
+  color: #6a1b9a;
+  border-color: #ce93d8;
+}
+
+.jcc-ds-ai-badge-lifecycle {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
+}
+
+.jcc-ds-ai-section-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid rgba(20, 115, 230, 0.08);
+}
+
+.jcc-ds-ai-section-row:last-of-type {
+  border-bottom: none;
+}
+
+.jcc-ds-ai-sec-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e6e6e;
+  white-space: nowrap;
+}
+
+.jcc-ds-ai-sec-val {
   color: #2c2c2c;
-  line-height: 1.6;
-  word-break: break-word;
+  line-height: 1.5;
+  font-size: 0.82rem;
+}
+
+.jcc-ds-ai-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #dde5ff;
+  margin-top: 0.1rem;
+}
+
+.jcc-ds-ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #f0f4ff;
+  color: #4b4b4b;
+  border: 1px solid #c9d8ff;
+  border-radius: 10px;
+  padding: 0.18rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.jcc-ds-ai-chip strong {
+  color: #2c2c2c;
+  font-weight: 700;
+}
+
+.jcc-ds-ai-rec {
+  padding-top: 0.35rem;
 }
 
 /* ── full-text hover tooltip (truncated name / tags) ────────────────────── */
