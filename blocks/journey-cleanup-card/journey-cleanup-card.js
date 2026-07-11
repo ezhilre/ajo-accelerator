@@ -2663,6 +2663,9 @@ function showDeliverySummary(root, cfg) {
     filterChannel = 'all';
     dsCacheSaved = false;
 
+    // Show loading state immediately so the UI responds right away
+    renderContent();
+
     const { year, month } = months[selectedIdx];
 
     // ── Check cache first (unless forced refresh) ─────────────────────────
@@ -2688,8 +2691,7 @@ function showDeliverySummary(root, cfg) {
         return;
       }
     }
-
-    renderContent(); // show loading state
+    // (loading spinner already showing — continue with live fetch)
 
     const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
     try {
@@ -2816,7 +2818,7 @@ function showDeliverySummary(root, cfg) {
       <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
     </div>
     <div id="jcc-ds-content" class="jcc-ds-content">
-      <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click <strong> Fetch </strong> to load delivery data.</div>
+      <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click &nbsp;<strong>Fetch</strong>&nbsp; to load delivery data.</div>
     </div>
   `;
   root.appendChild(wrap);
