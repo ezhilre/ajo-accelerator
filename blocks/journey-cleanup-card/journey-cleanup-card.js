@@ -204,6 +204,65 @@ async function verifyCredentials(c) {
   return data.pagination?.totalCount ?? (data.results || []).length;
 }
 
+// ─── Completion modal ────────────────────────────────────────────────────────
+
+function showCompletionModal({ title, subtitle, stats, onExport }) {
+  document.querySelector('.jcc-done-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'jcc-done-overlay';
+
+  const statsHtml = stats.map(([icon, label, value]) => `
+    <div class="jcc-done-stat">
+      <span class="jcc-done-stat-icon">${icon}</span>
+      <span class="jcc-done-stat-lbl">${esc(label)}</span>
+      <span class="jcc-done-stat-val">${esc(String(value))}</span>
+    </div>
+  `).join('');
+
+  overlay.innerHTML = `
+    <div class="jcc-done-box" role="dialog" aria-modal="true" aria-label="Analysis complete">
+      <div class="jcc-done-hdr">
+        <span class="jcc-done-icon">✅</span>
+        <div>
+          <p class="jcc-done-title">${esc(title)}</p>
+          <p class="jcc-done-sub">${esc(subtitle)}</p>
+        </div>
+      </div>
+      <div class="jcc-done-stats">${statsHtml}</div>
+      <div class="jcc-done-footer">
+        <span class="jcc-done-countdown" id="jcc-done-cd">Auto-closing in 10s…</span>
+        <div class="jcc-done-actions">
+          ${onExport ? '<button class="jcc-btn-secondary" id="jcc-done-export">📥 Export CSV</button>' : ''}
+          <button class="jcc-btn-primary" id="jcc-done-close">✖ Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  function dismiss() {
+    clearInterval(timer);
+    overlay.remove();
+  }
+
+  overlay.querySelector('#jcc-done-close').addEventListener('click', dismiss);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+  if (onExport) {
+    overlay.querySelector('#jcc-done-export')?.addEventListener('click', () => { onExport(); dismiss(); });
+  }
+
+  // Countdown auto-close
+  let secs = 10;
+  const cdEl = overlay.querySelector('#jcc-done-cd');
+  const timer = setInterval(() => {
+    secs -= 1;
+    if (cdEl) cdEl.textContent = `Auto-closing in ${secs}s…`;
+    if (secs <= 0) dismiss();
+  }, 1000);
+}
+
 // ─── mode selection ───────────────────────────────────────────────────────────
 
 function showModeSelect(root, cfg) {
@@ -1475,6 +1534,32 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         aiPl.textContent = `\u2705 LLM done \u2014 ${targets.length} journeys in ${fmtDur(totalElapsed)} \u00B7 avg ${fmtDur(avgMs)}/journey`;
         aiPf.style.width = '100%';
         render();
+        // ── Journey Cleanup completion modal ─────────────────────────────
+        let retire = 0; let review = 0; let keep = 0;
+        aiScores.forEach((entry) => {
+          if (!entry?.rule || !entry?.llm || entry.llm.error) return;
+          const score = Math.round(entry.rule.score * 0.4 + (entry.llm.retirementScore || 0) * 0.6);
+          if (score >= 80) retire += 1;
+          else if (score >= 50) review += 1;
+          else keep += 1;
+        });
+        showCompletionModal({
+          title: 'AI Analysis Complete',
+          subtitle: `Journey Cleanup · ${cfg.sandbox}`,
+          stats: [
+            ['🧠', 'Journeys AI-scored', targets.length],
+            ['🔴', 'Delete', retire],
+            ['🟡', 'Review', review],
+            ['🟢', 'Keep', keep],
+            ['⏱', 'Time taken', fmtDur(totalElapsed)],
+            ['📊', 'Avg per journey', fmtDur(avgMs)],
+          ],
+          onExport: () => {
+            const co = cutoff();
+            const allStale = all.filter((j) => new Date(j.metadata?.lastModifiedAt) < co);
+            triggerDownload(buildCsv(allStale, cfg, aiScores), `journey-cleanup-all-${todayIso()}.csv`);
+          },
+        });
         // Fetch and display token usage
         fetchTokenStats(proxyUrl).then((stats) => {
           if (!stats) return;
@@ -2633,29 +2718,48 @@ function showDeliverySummary(root, cfg) {
   async function runDsAiInsight(journeyRows) {
     if (!journeyRows.length) return;
     const BATCH = 3;
-    const pf = wrap.querySelector('#jcc-ds-pf');
-    const pl = wrap.querySelector('#jcc-ds-pl');
+
+    // ── AI progress bar (top of DS section) ──────────────────────────────
+    const aiBar = wrap.querySelector('#jcc-ds-ai-bar');
+    const aiBarFill = wrap.querySelector('#jcc-ds-ai-bar-fill');
+    const aiBarLbl = wrap.querySelector('#jcc-ds-ai-bar-lbl');
+    const aiBarStatus = wrap.querySelector('#jcc-ds-ai-bar-status');
+
+    function updAiBar(done, total) {
+      const pct = Math.round((done / total) * 100);
+      if (aiBar) aiBar.style.display = 'block';
+      if (aiBarFill) aiBarFill.style.width = `${pct}%`;
+      if (aiBarLbl) aiBarLbl.textContent = `${done} / ${total} journeys`;
+      if (aiBarStatus) aiBarStatus.textContent = done === total
+        ? `✅ AI summary complete — ${done} journeys analyzed`
+        : `🧠 AI summary complete: ${done} out of ${total}`;
+    }
+
+    updAiBar(0, journeyRows.length);
+
+    let done = 0;
     for (let i = 0; i < journeyRows.length; i += BATCH) {
       const batch = journeyRows.slice(i, i + BATCH);
       // Mark as pending so renderTable shows spinner
       batch.forEach((j) => { if (!dsAiScores.has(j.campaignId)) dsAiScores.set(j.campaignId, 'pending'); });
       renderTable();
-      if (pf) pf.style.width = `${Math.round((i / journeyRows.length) * 100)}%`;
-      if (pl) pl.textContent = `\uD83E\uDD16 AI Insight: ${i}/${journeyRows.length} journeys\u2026`;
       await Promise.all(batch.map(async (j) => {
         try {
-          // scoreSingleLLM expects an object with `id` and journey fields
           const journeyObj = { id: j.campaignId, name: j.name, status: j.status, metadata: { lastModifiedAt: j.modifiedAt } };
           const llm = await scoreSingleLLM(journeyObj, dsProxyUrl);
           dsAiScores.set(j.campaignId, { llm });
         } catch (_) {
           dsAiScores.set(j.campaignId, 'error');
         }
+        done += 1;
+        updAiBar(done, journeyRows.length);
       }));
       renderTable();
     }
-    if (pf) pf.style.width = '100%';
-    if (pl) pl.textContent = `\u2705 AI Insight complete \u2014 ${journeyRows.length} journeys analyzed`;
+
+    // Final state — hide bar after 3 seconds (completion modal takes over)
+    updAiBar(journeyRows.length, journeyRows.length);
+    setTimeout(() => { if (aiBar) aiBar.style.display = 'none'; }, 3000);
   }
 
   // ── Cache strip (shown above controls bar when loaded from cache) ─────────
@@ -2764,7 +2868,8 @@ function showDeliverySummary(root, cfg) {
           const pct = 50 + Math.round((detailDone / detailTotal) * 50);
           setProg(pct, `🔍 Resolving channel details… ${detailDone} / ${detailTotal} journeys`);
           setStep('fetch', '✅', `${loaded} ${typeLabel} fetched`, false, undefined);
-          setStep('detail', '⏳', `Resolving channel details… ${detailDone} / ${detailTotal} journeys`, true, true);
+          // Step row shows only the count — avoids duplicating the progress bar label text
+          setStep('detail', '⏳', `${detailDone} / ${detailTotal} journeys resolved`, true, true);
         } else {
           const pct = Math.round((wi / totalWindows) * 50); // fetch phase = 0–50%
           setProg(Math.max(5, pct), `📥 Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded`);
@@ -2802,7 +2907,7 @@ function showDeliverySummary(root, cfg) {
             const pct = 70 + Math.round((detailDone / detailTotal) * 30);
             setProg(pct, `🔍 [Journeys] Resolving channel details… ${detailDone} / ${detailTotal}`);
             setStep('fetch', '✅', `${camp.length} campaigns + ${loaded} journeys fetched`, false, undefined);
-            setStep('detail', '⏳', `Resolving channel details… ${detailDone} / ${detailTotal} journeys`, true, true);
+            setStep('detail', '⏳', `${detailDone} / ${detailTotal} journeys resolved`, true, true);
           } else {
             const pct = 40 + Math.round((wi / totalWindows) * 30);
             setProg(pct, `📥 [Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded`);
@@ -2859,11 +2964,57 @@ function showDeliverySummary(root, cfg) {
     if (aiInsightEnabled) {
       const journeyRows = campaigns.filter((c) => c._type === 'journey');
       if (journeyRows.length) {
+        const aiStartMs = Date.now();
         await runDsAiInsight(journeyRows);
         // Re-save with AI scores included
         saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, campaigns, dsAiScores)
           .catch(() => { /* ignore */ });
+        // ── Completion modal ──────────────────────────────────────────────
+        const elapsed = Date.now() - aiStartMs;
+        const scored = [...dsAiScores.values()].filter((v) => v && v.llm && !v.llm.error).length;
+        const uniqueChannels = [...new Set(
+          campaigns.flatMap((c) => {
+            if (c._type === 'journey') return (c._channels || '').split(',').map((s) => s.trim()).filter(Boolean);
+            return (c.packages || []).flatMap((p) => (p.channel ? [dsChannelLabel(p.channel)] : []));
+          }),
+        )].sort();
+        showCompletionModal({
+          title: 'Analysis Complete',
+          subtitle: `${monthLabel(year, month)} · ${cfg.sandbox}`,
+          stats: [
+            ['📦', 'Items fetched', campaigns.length],
+            ['🤖', 'AI summaries generated', scored],
+            ['📡', 'Channels found', uniqueChannels.join(', ') || '—'],
+            ['⏱', 'Time taken', fmtDur(elapsed)],
+            ['💾', 'Saved to cache', 'Yes'],
+          ],
+          onExport: () => {
+            const label = monthLabel(year, month).replace(/\s+/g, '-');
+            triggerDownload(buildDsCsv(campaigns, cfg, dsAiScores), `delivery-summary-${label}.csv`);
+          },
+        });
       }
+    } else if (campaigns.length) {
+      // No AI — show simpler fetch-complete modal
+      const uniqueChannels = [...new Set(
+        campaigns.flatMap((c) => {
+          if (c._type === 'journey') return (c._channels || '').split(',').map((s) => s.trim()).filter(Boolean);
+          return (c.packages || []).flatMap((p) => (p.channel ? [dsChannelLabel(p.channel)] : []));
+        }),
+      )].sort();
+      showCompletionModal({
+        title: 'Fetch Complete',
+        subtitle: `${monthLabel(year, month)} · ${cfg.sandbox}`,
+        stats: [
+          ['📦', selectedType === 'journey' ? 'Journeys loaded' : selectedType === 'both' ? 'Items loaded' : 'Campaigns loaded', campaigns.length],
+          ['📡', 'Channels found', uniqueChannels.join(', ') || '—'],
+          ['💾', 'Saved to cache', 'Yes'],
+        ],
+        onExport: () => {
+          const label = monthLabel(year, month).replace(/\s+/g, '-');
+          triggerDownload(buildDsCsv(campaigns, cfg, dsAiScores), `delivery-summary-${label}.csv`);
+        },
+      });
     }
   }
 
@@ -2894,6 +3045,16 @@ function showDeliverySummary(root, cfg) {
       </label>
       <button class="jcc-btn-primary jcc-ds-fetch-btn" id="jcc-ds-fetch">\uD83D\uDCE5 Fetch</button>
       <button class="jcc-btn-secondary jcc-ds-export-btn" id="jcc-ds-export" style="display:none">\uD83D\uDCE5 Export CSV</button>
+    </div>
+    <div id="jcc-ds-ai-bar" style="display:none;background:linear-gradient(135deg,#f0f4ff 0%,#f5f0ff 100%);border:1px solid #c9d8ff;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.85rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+        <span style="font-size:0.8rem;font-weight:700;color:#7e5fcf;letter-spacing:0.03em">🤖 AI Summary Progress</span>
+        <span id="jcc-ds-ai-bar-lbl" style="font-size:0.78rem;color:#4b4b4b;font-weight:600">0 / 0 journeys</span>
+      </div>
+      <div style="height:6px;background:#dde5ff;border-radius:3px;overflow:hidden">
+        <div id="jcc-ds-ai-bar-fill" style="height:100%;background:linear-gradient(90deg,#7e5fcf,#1473e6);border-radius:3px;width:0%;transition:width 0.4s ease"></div>
+      </div>
+      <div id="jcc-ds-ai-bar-status" style="font-size:0.75rem;color:#6e6e6e;margin-top:0.35rem;font-style:italic">🧠 Generating AI summaries…</div>
     </div>
     <div id="jcc-ds-content" class="jcc-ds-content">
       <div class="jcc-ds-placeholder">\uD83D\uDCC5 Select a month above and click &nbsp;<strong>Fetch</strong>&nbsp; to load delivery data.</div>
