@@ -2510,13 +2510,13 @@ function showDeliverySummary(root, cfg) {
             <span class="jcc-ds-prog-lbl" id="jcc-ds-pl" style="min-width:220px">⏳ Initialising…</span>
           </div>
           <div id="jcc-ds-steps" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:1rem;max-width:520px;width:100%;font-size:0.82rem">
-            <div class="jcc-ds-step" id="jcc-ds-step-fetch" style="display:flex;align-items:center;gap:0.5rem;color:#6e6e6e">
+            <div class="jcc-ds-step" id="jcc-ds-step-fetch" style="display:flex;align-items:center;gap:0.5rem;color:#2c2c2c">
               <span class="jcc-ds-step-icon" id="jcc-ds-step-fetch-icon">⏳</span>
-              <span id="jcc-ds-step-fetch-lbl">Fetching from AJO API…</span>
+              <span id="jcc-ds-step-fetch-lbl">Fetching from AJO API… 0 loaded</span>
             </div>
             ${selectedType === 'journey' || selectedType === 'both' ? `
-            <div class="jcc-ds-step" id="jcc-ds-step-detail" style="display:flex;align-items:center;gap:0.5rem;color:#b3b3b3">
-              <span class="jcc-ds-step-icon" id="jcc-ds-step-detail-icon">○</span>
+            <div class="jcc-ds-step" id="jcc-ds-step-detail" style="display:none;align-items:center;gap:0.5rem;color:#2c2c2c">
+              <span class="jcc-ds-step-icon" id="jcc-ds-step-detail-icon">⏳</span>
               <span id="jcc-ds-step-detail-lbl">Resolving channel details…</span>
             </div>` : ''}
           </div>
@@ -2727,71 +2727,75 @@ function showDeliverySummary(root, cfg) {
       if (pf) pf.style.width = `${Math.min(100, pct)}%`;
       if (pl) pl.textContent = label;
     }
-    function setStep(id, icon, label, active) {
+    function setStep(id, icon, label, active, show) {
       const iconEl = wrap.querySelector(`#jcc-ds-step-${id}-icon`);
       const lblEl  = wrap.querySelector(`#jcc-ds-step-${id}-lbl`);
       const rowEl  = wrap.querySelector(`#jcc-ds-step-${id}`);
       if (iconEl) iconEl.textContent = icon;
       if (lblEl)  lblEl.textContent  = label;
-      if (rowEl)  rowEl.style.color  = active ? '#2c2c2c' : '#b3b3b3';
+      if (rowEl) {
+        rowEl.style.color = active ? '#2c2c2c' : '#b3b3b3';
+        // show=true → make visible; show=false → hide; undefined → leave as-is
+        if (show === true)  rowEl.style.display = 'flex';
+        if (show === false) rowEl.style.display = 'none';
+      }
     }
 
     try {
       function onProg({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) {
         if (detailPhase) {
           const pct = 50 + Math.round((detailDone / detailTotal) * 50);
-          setProg(pct, `🔍 Resolving channels… ${detailDone} / ${detailTotal}`);
-          setStep('fetch', '✅', `${loaded} ${typeLabel} fetched`, false);
-          setStep('detail', '⏳', `Resolving channels… ${detailDone} / ${detailTotal}`, true);
+          setProg(pct, `🔍 Resolving channel details… ${detailDone} / ${detailTotal} journeys`);
+          setStep('fetch', '✅', `${loaded} ${typeLabel} fetched`, false, undefined);
+          setStep('detail', '⏳', `Resolving channel details… ${detailDone} / ${detailTotal} journeys`, true, true);
         } else {
           const pct = Math.round((wi / totalWindows) * 50); // fetch phase = 0–50%
-          setProg(Math.max(5, pct), `📥 Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded…`);
-          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded…`, true);
+          setProg(Math.max(5, pct), `📥 Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded`);
+          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded`, true, undefined);
         }
       }
 
       if (selectedType === 'campaign') {
-        setStep('fetch', '⏳', 'Fetching campaigns from AJO API…', true);
         campaigns = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
           const pct = Math.max(5, Math.round((wi / totalWindows) * 100));
-          setProg(pct, `📥 Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded…`);
-          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded…`, true);
+          setProg(pct, `📥 Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded`);
+          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded`, true, undefined);
         });
         setProg(100, `✅ Done — ${campaigns.length} campaigns loaded`);
-        setStep('fetch', '✅', `${campaigns.length} campaigns fetched`, true);
+        setStep('fetch', '✅', `${campaigns.length} campaigns fetched`, true, undefined);
       } else if (selectedType === 'journey') {
-        setStep('fetch', '⏳', 'Fetching journeys from AJO API…', true);
         campaigns = await fetchAllJourneysForMonth(cfg, year, month, onProg);
         setProg(100, `✅ Done — ${campaigns.length} journeys loaded`);
-        setStep('fetch', '✅', `${campaigns.length} journeys fetched`, false);
-        setStep('detail', '✅', 'Channel details resolved', false);
+        setStep('fetch', '✅', `${campaigns.length} journeys fetched`, false, undefined);
+        setStep('detail', '✅', `Channel details resolved — ${campaigns.length} journeys`, false, true);
       } else {
         // Both — Phase 1: Campaigns (0–40%)
-        setStep('fetch', '⏳', 'Phase 1/2 — Fetching campaigns…', true);
+        setStep('fetch', '⏳', 'Phase 1/2 — Fetching campaigns… 0 loaded', true, undefined);
         const camp = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
           const pct = Math.max(3, Math.round((wi / totalWindows) * 40));
-          setProg(pct, `📥 [Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded…`);
-          setStep('fetch', '⏳', `[Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded…`, true);
+          setProg(pct, `📥 [Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded`);
+          setStep('fetch', '⏳', `[Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded`, true, undefined);
         });
         setProg(40, `✅ ${camp.length} campaigns — now fetching journeys…`);
-        setStep('fetch', '⏳', `Phase 2/2 — Fetching journeys… (${camp.length} campaigns done)`, true);
+        setStep('fetch', '⏳', `Phase 2/2 — Fetching journeys… (${camp.length} campaigns done) 0 loaded`, true, undefined);
 
         // Phase 2: Journeys (40–100%)
         const jour = await fetchAllJourneysForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) => {
           if (detailPhase) {
             const pct = 70 + Math.round((detailDone / detailTotal) * 30);
-            setProg(pct, `🔍 [Journeys] Resolving channels… ${detailDone} / ${detailTotal}`);
-            setStep('detail', '⏳', `Resolving channels… ${detailDone} / ${detailTotal}`, true);
+            setProg(pct, `🔍 [Journeys] Resolving channel details… ${detailDone} / ${detailTotal}`);
+            setStep('fetch', '✅', `${camp.length} campaigns + ${loaded} journeys fetched`, false, undefined);
+            setStep('detail', '⏳', `Resolving channel details… ${detailDone} / ${detailTotal} journeys`, true, true);
           } else {
             const pct = 40 + Math.round((wi / totalWindows) * 30);
-            setProg(pct, `📥 [Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded…`);
-            setStep('fetch', '⏳', `[Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded…`, true);
+            setProg(pct, `📥 [Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded`);
+            setStep('fetch', '⏳', `[Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded`, true, undefined);
           }
         });
         campaigns = [...camp, ...jour];
         setProg(100, `✅ Done — ${camp.length} campaigns + ${jour.length} journeys`);
-        setStep('fetch', '✅', `${camp.length} campaigns + ${jour.length} journeys fetched`, false);
-        setStep('detail', '✅', 'Channel details resolved', false);
+        setStep('fetch', '✅', `${camp.length} campaigns + ${jour.length} journeys fetched`, false, undefined);
+        setStep('detail', '✅', `Channel details resolved — ${jour.length} journeys`, false, true);
       }
     } catch (e) {
       loading = false;
