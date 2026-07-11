@@ -2495,7 +2495,32 @@ function showDeliverySummary(root, cfg) {
 
     if (loading) {
       const loadingLabel = selectedType === 'journey' ? 'journeys' : selectedType === 'both' ? 'campaigns & journeys' : 'campaigns';
-      contentEl.innerHTML = `<div class="jcc-ds-loading"><span class="jcc-ai-analyzing">\u23F3 Fetching ${loadingLabel} for ${monthLabel(months[selectedIdx].year, months[selectedIdx].month)}\u2026</span><div id="jcc-ds-prog" class="jcc-ds-prog-wrap"><div class="jcc-ds-prog-bar"><div class="jcc-ds-prog-fill" id="jcc-ds-pf" style="width:0%"></div></div><span class="jcc-ds-prog-lbl" id="jcc-ds-pl">Starting\u2026</span></div></div>`;
+      const { year, month } = months[selectedIdx];
+      contentEl.innerHTML = `
+        <div class="jcc-ds-loading">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+            <span style="font-size:2rem;animation:jcc-pulse 1.2s ease-in-out infinite">📡</span>
+            <div>
+              <div style="font-size:1rem;font-weight:700;color:#2c2c2c">Fetching ${loadingLabel}</div>
+              <div style="font-size:0.82rem;color:#6e6e6e;margin-top:0.1rem">${monthLabel(year, month)} &nbsp;·&nbsp; Sandbox: <strong>${esc(cfg.sandbox)}</strong></div>
+            </div>
+          </div>
+          <div class="jcc-ds-prog-wrap" style="max-width:520px;width:100%">
+            <div class="jcc-ds-prog-bar"><div class="jcc-ds-prog-fill" id="jcc-ds-pf" style="width:3%"></div></div>
+            <span class="jcc-ds-prog-lbl" id="jcc-ds-pl" style="min-width:220px">⏳ Initialising…</span>
+          </div>
+          <div id="jcc-ds-steps" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:1rem;max-width:520px;width:100%;font-size:0.82rem">
+            <div class="jcc-ds-step" id="jcc-ds-step-fetch" style="display:flex;align-items:center;gap:0.5rem;color:#6e6e6e">
+              <span class="jcc-ds-step-icon" id="jcc-ds-step-fetch-icon">⏳</span>
+              <span id="jcc-ds-step-fetch-lbl">Fetching from AJO API…</span>
+            </div>
+            ${selectedType === 'journey' || selectedType === 'both' ? `
+            <div class="jcc-ds-step" id="jcc-ds-step-detail" style="display:flex;align-items:center;gap:0.5rem;color:#b3b3b3">
+              <span class="jcc-ds-step-icon" id="jcc-ds-step-detail-icon">○</span>
+              <span id="jcc-ds-step-detail-lbl">Resolving channel details…</span>
+            </div>` : ''}
+          </div>
+        </div>`;
       return;
     }
 
@@ -2694,51 +2719,79 @@ function showDeliverySummary(root, cfg) {
     // (loading spinner already showing — continue with live fetch)
 
     const typeLabel = selectedType === 'both' ? 'campaigns & journeys' : (selectedType === 'journey' ? 'journeys' : 'campaigns');
+
+    // Helper — always looks up elements fresh (they live inside #jcc-ds-content which renderContent() just wrote)
+    function setProg(pct, label) {
+      const pf = wrap.querySelector('#jcc-ds-pf');
+      const pl = wrap.querySelector('#jcc-ds-pl');
+      if (pf) pf.style.width = `${Math.min(100, pct)}%`;
+      if (pl) pl.textContent = label;
+    }
+    function setStep(id, icon, label, active) {
+      const iconEl = wrap.querySelector(`#jcc-ds-step-${id}-icon`);
+      const lblEl  = wrap.querySelector(`#jcc-ds-step-${id}-lbl`);
+      const rowEl  = wrap.querySelector(`#jcc-ds-step-${id}`);
+      if (iconEl) iconEl.textContent = icon;
+      if (lblEl)  lblEl.textContent  = label;
+      if (rowEl)  rowEl.style.color  = active ? '#2c2c2c' : '#b3b3b3';
+    }
+
     try {
       function onProg({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) {
-        const pf = wrap.querySelector('#jcc-ds-pf');
-        const pl = wrap.querySelector('#jcc-ds-pl');
         if (detailPhase) {
-          const pct = Math.round((detailDone / detailTotal) * 100);
-          if (pf) pf.style.width = `${pct}%`;
-          if (pl) pl.textContent = `\uD83D\uDD0D Fetching channel details\u2026 ${detailDone}/${detailTotal}`;
+          const pct = 50 + Math.round((detailDone / detailTotal) * 50);
+          setProg(pct, `🔍 Resolving channels… ${detailDone} / ${detailTotal}`);
+          setStep('fetch', '✅', `${loaded} ${typeLabel} fetched`, false);
+          setStep('detail', '⏳', `Resolving channels… ${detailDone} / ${detailTotal}`, true);
         } else {
-          const pct = Math.round((wi / totalWindows) * 100);
-          if (pf) pf.style.width = `${pct}%`;
-          if (pl) pl.textContent = `Window ${wi}/${totalWindows} \u2014 ${loaded} ${typeLabel} loaded\u2026`;
+          const pct = Math.round((wi / totalWindows) * 50); // fetch phase = 0–50%
+          setProg(Math.max(5, pct), `📥 Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded…`);
+          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} ${typeLabel} loaded…`, true);
         }
       }
 
       if (selectedType === 'campaign') {
-        campaigns = await fetchAllCampaignsForMonth(cfg, year, month, onProg);
-      } else if (selectedType === 'journey') {
-        campaigns = await fetchAllJourneysForMonth(cfg, year, month, onProg);
-      } else {
-        // Both — fetch sequentially so the progress bar is meaningful
-        const pf = wrap.querySelector('#jcc-ds-pf');
-        const pl = wrap.querySelector('#jcc-ds-pl');
-
-        // Phase 1: Campaigns (0–50%)
-        const camp = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
-          const pct = Math.round((wi / totalWindows) * 50); // first half
-          if (pf) pf.style.width = `${pct}%`;
-          if (pl) pl.textContent = `[Campaigns] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+        setStep('fetch', '⏳', 'Fetching campaigns from AJO API…', true);
+        campaigns = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+          const pct = Math.max(5, Math.round((wi / totalWindows) * 100));
+          setProg(pct, `📥 Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded…`);
+          setStep('fetch', '⏳', `Window ${wi} / ${totalWindows} — ${loaded} campaigns loaded…`, true);
         });
+        setProg(100, `✅ Done — ${campaigns.length} campaigns loaded`);
+        setStep('fetch', '✅', `${campaigns.length} campaigns fetched`, true);
+      } else if (selectedType === 'journey') {
+        setStep('fetch', '⏳', 'Fetching journeys from AJO API…', true);
+        campaigns = await fetchAllJourneysForMonth(cfg, year, month, onProg);
+        setProg(100, `✅ Done — ${campaigns.length} journeys loaded`);
+        setStep('fetch', '✅', `${campaigns.length} journeys fetched`, false);
+        setStep('detail', '✅', 'Channel details resolved', false);
+      } else {
+        // Both — Phase 1: Campaigns (0–40%)
+        setStep('fetch', '⏳', 'Phase 1/2 — Fetching campaigns…', true);
+        const camp = await fetchAllCampaignsForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded }) => {
+          const pct = Math.max(3, Math.round((wi / totalWindows) * 40));
+          setProg(pct, `📥 [Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded…`);
+          setStep('fetch', '⏳', `[Campaigns] Window ${wi} / ${totalWindows} — ${loaded} loaded…`, true);
+        });
+        setProg(40, `✅ ${camp.length} campaigns — now fetching journeys…`);
+        setStep('fetch', '⏳', `Phase 2/2 — Fetching journeys… (${camp.length} campaigns done)`, true);
 
-        // Phase 2: Journeys (50–100%)
+        // Phase 2: Journeys (40–100%)
         const jour = await fetchAllJourneysForMonth(cfg, year, month, ({ window: wi, totalWindows, loaded, detailPhase, detailDone, detailTotal }) => {
           if (detailPhase) {
-            const pct = 50 + Math.round((detailDone / detailTotal) * 50);
-            if (pf) pf.style.width = `${pct}%`;
-            if (pl) pl.textContent = `\uD83D\uDD0D [Journeys] Fetching channel details\u2026 ${detailDone}/${detailTotal}`;
+            const pct = 70 + Math.round((detailDone / detailTotal) * 30);
+            setProg(pct, `🔍 [Journeys] Resolving channels… ${detailDone} / ${detailTotal}`);
+            setStep('detail', '⏳', `Resolving channels… ${detailDone} / ${detailTotal}`, true);
           } else {
-            const pct = 50 + Math.round((wi / totalWindows) * 50); // second half
-            if (pf) pf.style.width = `${pct}%`;
-            if (pl) pl.textContent = `[Journeys] Window ${wi}/${totalWindows} \u2014 ${loaded} loaded\u2026`;
+            const pct = 40 + Math.round((wi / totalWindows) * 30);
+            setProg(pct, `📥 [Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded…`);
+            setStep('fetch', '⏳', `[Journeys] Window ${wi} / ${totalWindows} — ${loaded} loaded…`, true);
           }
         });
-
         campaigns = [...camp, ...jour];
+        setProg(100, `✅ Done — ${camp.length} campaigns + ${jour.length} journeys`);
+        setStep('fetch', '✅', `${camp.length} campaigns + ${jour.length} journeys fetched`, false);
+        setStep('detail', '✅', 'Channel details resolved', false);
       }
     } catch (e) {
       loading = false;
