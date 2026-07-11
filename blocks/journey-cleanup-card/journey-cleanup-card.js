@@ -2187,6 +2187,7 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
 
   // Phase 2: fetch journey details in parallel batches of 5 to extract channel info
   const BATCH = 5;
+  let detailDone = 0;
   for (let i = 0; i < journeys.length; i += BATCH) {
     const batch = journeys.slice(i, i + BATCH);
     onProgress({
@@ -2194,7 +2195,7 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
       totalWindows: windows.length,
       loaded: journeys.length,
       detailPhase: true,
-      detailDone: i,
+      detailDone,
       detailTotal: journeys.length,
     });
     await Promise.all(batch.map(async (j) => {
@@ -2204,7 +2205,17 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
       } catch (_) {
         j._channels = '';
       }
+      detailDone += 1;
     }));
+    // Report progress after each batch completes
+    onProgress({
+      window: windows.length,
+      totalWindows: windows.length,
+      loaded: journeys.length,
+      detailPhase: true,
+      detailDone,
+      detailTotal: journeys.length,
+    });
   }
 
   return journeys;
@@ -2425,7 +2436,7 @@ function showDeliverySummary(root, cfg) {
         <table class="jcc-tbl">
           <thead><tr>
             <th>Name</th><th>Status</th><th>Type</th><th>Tags</th><th>Channels</th><th>Published</th>
-            ${showAiCol ? '<th>AI Insight</th>' : ''}
+            ${selectedType !== 'campaign' ? '<th>AI Insight</th>' : ''}
           </tr></thead>
           <tbody id="jcc-ds-tbody"></tbody>
         </table>
