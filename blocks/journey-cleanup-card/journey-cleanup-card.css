@@ -409,12 +409,20 @@ body.jcc-no-scroll {
   gap: 0.75rem;
 }
 
-/* prevent the "← Home" back button from stretching to full header row height
-   Use !important to beat EDS decorateButtons() which adds class="button" and
-   applies button.button { background: var(--text-color) } at high specificity */
+/* Override EDS decorateButtons() which adds class="button" (black, full-width)
+   to every <button>. Apply to ALL back/secondary buttons used across views. */
 .jcc-back-btn,
 button.jcc-back-btn,
-button.button.jcc-back-btn {
+button.button.jcc-back-btn,
+.jcc-cb-back,
+button.jcc-cb-back,
+button.button.jcc-cb-back,
+.jcc-ds-back,
+button.jcc-ds-back,
+button.button.jcc-ds-back,
+.jcc-idl-back,
+button.jcc-idl-back,
+button.button.jcc-idl-back {
   align-self: center !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -433,11 +441,13 @@ button.button.jcc-back-btn {
   cursor: pointer !important;
   text-decoration: none !important;
   box-shadow: none !important;
+  flex-shrink: 0 !important;
 }
 
-.jcc-back-btn:hover,
-button.jcc-back-btn:hover,
-button.button.jcc-back-btn:hover {
+.jcc-back-btn:hover, button.button.jcc-back-btn:hover,
+.jcc-cb-back:hover,  button.button.jcc-cb-back:hover,
+.jcc-ds-back:hover,  button.button.jcc-ds-back:hover,
+.jcc-idl-back:hover, button.button.jcc-idl-back:hover {
   background: rgba(20, 115, 230, 0.06) !important;
   background-color: rgba(20, 115, 230, 0.06) !important;
   color: #1473e6 !important;
@@ -1856,14 +1866,22 @@ a.jcc-go-btn:active,
   display: flex;
   flex-direction: column;
   gap: 0;
+  align-items: flex-start; /* prevent child buttons from stretching full-width */
   background: linear-gradient(135deg, #f0f6ff 0%, #f5f0ff 100%);
   border: 1px solid #c9d8ff;
   border-radius: 10px;
-  padding: 0;
+  padding: 0.75rem 1.25rem 0;
   margin: 1.5rem auto;
   max-width: 920px;
   box-shadow: 0 2px 10px rgba(20, 115, 230, 0.08);
   overflow: hidden;
+}
+
+/* The inner sections (switcher + detail) must still stretch to full width */
+.jcc-cb-switcher-hdr,
+.jcc-cb-tabs,
+.jcc-cb-detail {
+  align-self: stretch;
 }
 
 /* Switcher header row */
@@ -1983,6 +2001,27 @@ a.jcc-go-btn:active,
   padding: 0.85rem 1.25rem 1rem;
   border-top: 1px solid #dde5ff;
   background: rgba(255, 255, 255, 0.55);
+}
+
+/* EDS decorateButtons() wraps every <button> in <p class="button-wrapper">,
+   making it block-level and full-width. Constrain it everywhere in this block. */
+.journey-cleanup-card p.button-wrapper,
+.journey-cleanup-card .button-wrapper,
+.jcc-cache-banner p.button-wrapper,
+.jcc-cache-banner .button-wrapper,
+.jcc-dashboard p.button-wrapper,
+.jcc-dashboard .button-wrapper,
+.jcc-id-lookup p.button-wrapper,
+.jcc-id-lookup .button-wrapper,
+.jcc-ds-wrap p.button-wrapper,
+.jcc-ds-wrap .button-wrapper,
+.jcc-mode-select p.button-wrapper,
+.jcc-mode-select .button-wrapper {
+  margin: 0 !important;
+  display: inline-flex !important;
+  width: auto !important;
+  max-width: none !important;
+  flex-shrink: 0 !important;
 }
 
 /* ── Snapshot info strip (inside dashboard when loaded from cache) ────────── */
