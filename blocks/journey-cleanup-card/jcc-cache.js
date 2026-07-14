@@ -11,13 +11,13 @@
  */
 
 const DB_NAME = 'jcc_dashboard';
-const DB_VERSION = 2;           // bumped for delivery store
+const DB_VERSION = 3;           // v3: delivery key now includes type + aiInsight
 const STORE = 'snapshots';
 const DS_STORE = 'delivery_snapshots'; // Delivery Report cache
 const STALE_DAYS = 90;
 const DS_STALE_DAYS = 3;        // delivery data stale after 3 days
 const MAX_SANDBOXES = 5;
-const MAX_DS_SNAPSHOTS = 20;    // max (sandbox × month) delivery snapshots
+const MAX_DS_SNAPSHOTS = 40;    // max param-combos: sandbox × month × type × ai
 
 // ── open / init DB ────────────────────────────────────────────────────────────
 
@@ -221,22 +221,27 @@ export function fmtSnapshotDate(iso) {
 }
 
 // ── Delivery Report cache ─────────────────────────────────────────────────────
-// Key: "<sandbox>:<YYYY-MM>"  e.g. "prod:2026-07"
+// Key: "<sandbox>:<YYYY-MM>:<type>:<ai|noai>"
+// e.g. "prod:2026-07:both:ai"  or  "prod:2026-07:campaign:noai"
+// Each unique combination of (sandbox, month, type, aiInsight) gets its own entry.
 
-function dsKey(sandbox, year, month) {
-  return `${sandbox}:${year}-${String(month).padStart(2, '0')}`;
+function dsKey(sandbox, year, month, type, aiInsight) {
+  const mm = String(month).padStart(2, '0');
+  const aiSuffix = aiInsight ? 'ai' : 'noai';
+  return `${sandbox}:${year}-${mm}:${type}:${aiSuffix}`;
 }
 
 /**
- * Save a Delivery Report snapshot (campaigns + AI scores for a sandbox+month).
+ * Save a Delivery Report snapshot.
  * @param {string}   sandbox
  * @param {number}   year
- * @param {number}   month      1-based
- * @param {string}   type       'campaign' | 'journey' | 'both'
- * @param {Object[]} campaigns  normalised campaign/journey rows
- * @param {Map}      aiScores   Map<id, {llm}|'pending'|'error'>
+ * @param {number}   month       1-based
+ * @param {string}   type        'campaign' | 'journey' | 'both'
+ * @param {boolean}  aiInsight   whether AI Insight was enabled for this fetch
+ * @param {Object[]} campaigns   normalised campaign/journey rows
+ * @param {Map}      aiScores    Map<id, {llm}|'pending'|'error'>
  */
-export async function saveDeliverySnapshot(sandbox, year, month, type, campaigns, aiScores) {
+export async function saveDeliverySnapshot(sandbox, year, month, type, aiInsight, campaigns, aiScores) {
   const db = await openDb();
   await _enforceDsLimit(db);
 
@@ -245,11 +250,12 @@ export async function saveDeliverySnapshot(sandbox, year, month, type, campaigns
 
   const now = new Date().toISOString();
   const record = {
-    key: dsKey(sandbox, year, month),
+    key: dsKey(sandbox, year, month, type, aiInsight),
     sandbox,
     year,
     month,
     type,
+    aiInsight: !!aiInsight,
     savedAt: now,
     accessedAt: now,
     count: campaigns.length,
@@ -267,18 +273,20 @@ export async function saveDeliverySnapshot(sandbox, year, month, type, campaigns
 }
 
 /**
- * Load a Delivery Report snapshot.
- * @param {string} sandbox
- * @param {number} year
- * @param {number} month  1-based
+ * Load a Delivery Report snapshot for the exact param combination.
+ * @param {string}  sandbox
+ * @param {number}  year
+ * @param {number}  month       1-based
+ * @param {string}  type        'campaign' | 'journey' | 'both'
+ * @param {boolean} aiInsight   whether AI Insight is currently enabled
  * @returns {Promise<Object|null>}
  */
-export async function loadDeliverySnapshot(sandbox, year, month) {
+export async function loadDeliverySnapshot(sandbox, year, month, type, aiInsight) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DS_STORE, 'readwrite');
     const store = tx.objectStore(DS_STORE);
-    const req = store.get(dsKey(sandbox, year, month));
+    const req = store.get(dsKey(sandbox, year, month, type, aiInsight));
     req.onsuccess = () => {
       const record = req.result;
       if (!record) { resolve(null); return; }
@@ -292,15 +300,52 @@ export async function loadDeliverySnapshot(sandbox, year, month) {
 }
 
 /**
- * Delete a Delivery Report snapshot.
+ * Delete the snapshot for the exact param combination.
+ * @param {string}  sandbox
+ * @param {number}  year
+ * @param {number}  month     1-based
+ * @param {string}  type      'campaign' | 'journey' | 'both'
+ * @param {boolean} aiInsight
  */
-export async function clearDeliverySnapshot(sandbox, year, month) {
+export async function clearDeliverySnapshot(sandbox, year, month, type, aiInsight) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DS_STORE, 'readwrite');
-    tx.objectStore(DS_STORE).delete(dsKey(sandbox, year, month));
+    tx.objectStore(DS_STORE).delete(dsKey(sandbox, year, month, type, aiInsight));
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * List all stored delivery snapshot metadata (no campaign arrays — lightweight).
+ * Groups by sandbox + month for display, exposing all param variants.
+ * @returns {Promise<Array>}
+ */
+export async function listDeliverySnapshots() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DS_STORE, 'readonly');
+    const req = tx.objectStore(DS_STORE).getAll();
+    req.onsuccess = () => {
+      const now = Date.now();
+      const list = (req.result || []).map(({
+        key, sandbox, year, month, type, aiInsight, savedAt, accessedAt, count, aiScoredCount,
+      }) => {
+        const daysOld = Math.floor((now - new Date(savedAt).getTime()) / 86400000);
+        return {
+          key, sandbox, year, month, type, aiInsight, savedAt, accessedAt,
+          count, aiScoredCount, daysOld, isStale: daysOld >= DS_STALE_DAYS,
+        };
+      });
+      list.sort((a, b) => {
+        const ta = a.accessedAt || a.savedAt || '';
+        const tb = b.accessedAt || b.savedAt || '';
+        return ta > tb ? -1 : ta < tb ? 1 : 0;
+      });
+      resolve(list);
+    };
+    req.onerror = () => reject(req.error);
   });
 }
 

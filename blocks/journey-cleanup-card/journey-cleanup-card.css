@@ -2051,6 +2051,182 @@ a.jcc-go-btn:active,
   font-weight: 700;
 }
 
+/* ── Delivery Report cache strip (param-aware) ───────────────────────────── */
+
+.jcc-ds-cache-strip {
+  background: linear-gradient(135deg, #f0f6ff 0%, #f8f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-left: 4px solid #1473e6;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.82rem;
+  color: #2c2c2c;
+}
+
+.jcc-ds-cache-strip-stale {
+  background: linear-gradient(135deg, #fffbf0 0%, #fff3e0 100%);
+  border-color: #f4d48a;
+  border-left-color: #e67700;
+}
+
+.jcc-ds-cache-strip-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.jcc-ds-cache-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.jcc-ds-cache-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-ds-cache-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.jcc-ds-cache-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #1473e6;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.jcc-ds-cache-detail {
+  font-size: 0.79rem;
+  color: #4b4b4b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jcc-ds-cache-stale-note {
+  color: #a85900;
+  font-weight: 600;
+}
+
+/* ── Param tag badges ────────────────────────────────────────────────────── */
+
+.jcc-ds-cache-strip-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.jcc-ds-cache-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.jcc-ds-cache-badge-type {
+  background: #e8eaf6;
+  color: #283593;
+  border-color: #9fa8da;
+}
+
+.jcc-ds-cache-badge-ai {
+  background: linear-gradient(135deg, #f3e5f5, #e8eaf6);
+  color: #6a1b9a;
+  border-color: #ce93d8;
+}
+
+.jcc-ds-cache-badge-noai {
+  background: #f5f5f5;
+  color: #616161;
+  border-color: #bdbdbd;
+}
+
+.jcc-ds-cache-age {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 1px solid #90caf9;
+  white-space: nowrap;
+}
+
+.jcc-ds-cache-age-stale {
+  background: #fff3e0;
+  color: #e65100;
+  border-color: #ffcc80;
+}
+
+/* ── Action buttons ──────────────────────────────────────────────────────── */
+
+.jcc-ds-cache-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.jcc-ds-cache-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.jcc-ds-cache-btn:active {
+  transform: scale(0.97);
+}
+
+.jcc-ds-cache-btn-refresh {
+  background: #fff;
+  color: #1473e6;
+  border-color: #1473e6;
+}
+
+.jcc-ds-cache-btn-refresh:hover {
+  background: #e8f0fe;
+}
+
+.jcc-ds-cache-btn-clear {
+  background: #fff;
+  color: #c9252d;
+  border-color: #c9252d;
+}
+
+.jcc-ds-cache-btn-clear:hover {
+  background: #fff0f0;
+}
+
 /* ── Journey type badges ─────────────────────────────────────────────────── */
 
 .jcc-jtype-badge {

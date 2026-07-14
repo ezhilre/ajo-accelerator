@@ -2763,20 +2763,62 @@ function showDeliverySummary(root, cfg) {
     if (!snap) return;
     const { year, month } = months[selectedIdx];
     const label = monthLabel(year, month);
-    const staleWarn = snap.isStale ? ` <span class="jcc-snap-stale-txt"> ⚠ ${snap.daysOld}d old — consider refreshing</span>` : '';
+
+    // ── param badges ──────────────────────────────────────────────────────
+    const typeIcon = { campaign: '📣', journey: '🗺', both: '🔀' };
+    const typeLabel = { campaign: 'Campaign', journey: 'Journey', both: 'Campaign + Journey' };
+    const snapType = snap.type || selectedType;
+    const snapAi   = snap.aiInsight;
+
+    const typeBadge = `<span class="jcc-ds-cache-badge jcc-ds-cache-badge-type">${typeIcon[snapType] || '📦'} ${typeLabel[snapType] || snapType}</span>`;
+    const aiBadge   = snapAi
+      ? `<span class="jcc-ds-cache-badge jcc-ds-cache-badge-ai">🤖 AI Insight</span>`
+      : `<span class="jcc-ds-cache-badge jcc-ds-cache-badge-noai">📋 No AI</span>`;
+
+    // ── age chip ──────────────────────────────────────────────────────────
+    const ageText   = snap.daysOld === 0 ? 'today' : snap.daysOld === 1 ? '1d ago' : `${snap.daysOld}d ago`;
+    const ageChip   = `<span class="jcc-ds-cache-age${snap.isStale ? ' jcc-ds-cache-age-stale' : ''}">${snap.isStale ? '⚠' : '🕐'} ${ageText}</span>`;
+    const staleNote = snap.isStale ? `<span class="jcc-snap-stale-txt jcc-ds-cache-stale-note"> — data may be stale, consider refreshing</span>` : '';
+
     const strip = document.createElement('div');
-    strip.className = `jcc-snap-info jcc-ds-cache-strip${snap.isStale ? ' jcc-snap-stale' : ''}`;
-    strip.innerHTML = `📦 Loaded from cache &nbsp;·&nbsp; <strong>${label}</strong> &nbsp;·&nbsp; Saved: <strong>${fmtSnapshotDate(snap.savedAt)}</strong> &nbsp;·&nbsp; ${snap.count} items${staleWarn} <button class="jcc-btn-sec jcc-snap-refresh jcc-ds-cache-refresh" style="margin-left:0.5rem">🔄 Refresh</button> <button class="jcc-btn-sec" id="jcc-ds-cache-clear" style="margin-left:0.25rem">🗑 Clear</button>`;
+    strip.className = `jcc-ds-cache-strip${snap.isStale ? ' jcc-ds-cache-strip-stale' : ''}`;
+    strip.innerHTML = `
+      <div class="jcc-ds-cache-strip-inner">
+        <div class="jcc-ds-cache-strip-left">
+          <span class="jcc-ds-cache-icon">📦</span>
+          <div class="jcc-ds-cache-meta">
+            <span class="jcc-ds-cache-title">Loaded from cache</span>
+            <span class="jcc-ds-cache-detail">
+              <strong>${label}</strong>
+              &nbsp;·&nbsp; ${snap.count} items
+              &nbsp;·&nbsp; Saved: <strong>${fmtSnapshotDate(snap.savedAt)}</strong>
+              ${staleNote}
+            </span>
+          </div>
+        </div>
+        <div class="jcc-ds-cache-strip-tags">
+          ${typeBadge}
+          ${aiBadge}
+          ${ageChip}
+        </div>
+        <div class="jcc-ds-cache-strip-actions">
+          <button class="jcc-ds-cache-btn jcc-ds-cache-btn-refresh jcc-snap-refresh jcc-ds-cache-refresh" title="Re-fetch live data">🔄 Refresh</button>
+          <button class="jcc-ds-cache-btn jcc-ds-cache-btn-clear" id="jcc-ds-cache-clear" title="Remove this cache entry">🗑 Clear</button>
+        </div>
+      </div>
+    `;
+
     // Insert before the controls bar
     const ctrlBar = wrap.querySelector('.jcc-ds-controls-bar');
     if (ctrlBar) wrap.insertBefore(strip, ctrlBar);
+
     strip.querySelector('.jcc-ds-cache-refresh').addEventListener('click', () => {
       strip.remove();
       dsCacheSaved = false;
       loadMonth(true);
     });
     strip.querySelector('#jcc-ds-cache-clear').addEventListener('click', async () => {
-      try { await clearDeliverySnapshot(cfg.sandbox, year, month); } catch (_) { /* ignore */ }
+      try { await clearDeliverySnapshot(cfg.sandbox, year, month, snapType, snapAi); } catch (_) { /* ignore */ }
       strip.remove();
     });
   }
@@ -2804,7 +2846,7 @@ function showDeliverySummary(root, cfg) {
       try {
         // Race the IDB lookup against a 2-second timeout so a hung IDB never blocks the fetch
         snap = await Promise.race([
-          loadDeliverySnapshot(cfg.sandbox, year, month),
+          loadDeliverySnapshot(cfg.sandbox, year, month, selectedType, aiInsightEnabled),
           new Promise((resolve) => { setTimeout(() => resolve(null), 2000); }),
         ]);
       } catch (_) { /* ignore */ }
@@ -2951,7 +2993,7 @@ function showDeliverySummary(root, cfg) {
     // Auto-save to cache after fetch (before AI so basic data is cached immediately)
     if (!dsCacheSaved && campaigns.length) {
       dsCacheSaved = true;
-      saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, campaigns, dsAiScores)
+      saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, aiInsightEnabled, campaigns, dsAiScores)
         .catch(() => { /* ignore */ });
     }
 
@@ -2961,8 +3003,8 @@ function showDeliverySummary(root, cfg) {
       if (journeyRows.length) {
         const aiStartMs = Date.now();
         await runDsAiInsight(journeyRows);
-        // Re-save with AI scores included
-        saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, campaigns, dsAiScores)
+        // Re-save with AI scores included (same key: aiInsight=true)
+        saveDeliverySnapshot(cfg.sandbox, year, month, selectedType, true, campaigns, dsAiScores)
           .catch(() => { /* ignore */ });
         // ── Completion modal ──────────────────────────────────────────────
         const elapsed = Date.now() - aiStartMs;
