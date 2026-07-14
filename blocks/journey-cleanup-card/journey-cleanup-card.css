@@ -423,7 +423,7 @@ button.button.jcc-ds-back,
 .jcc-idl-back,
 button.jcc-idl-back,
 button.button.jcc-idl-back {
-  align-self: center !important;
+  align-self: flex-start !important;
   display: inline-flex !important;
   align-items: center !important;
   width: auto !important;
