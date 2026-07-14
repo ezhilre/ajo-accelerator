@@ -330,12 +330,6 @@ function showModeSelect(root, cfg) {
           <span class="jcc-ms-card-title">Delivery Summary</span>
           <span class="jcc-ms-card-desc">View aggregated campaign delivery metrics by month &mdash; fetched in 7-day windows from Jan 2026 onwards.</span>
         </button>
-        <button class="jcc-ms-card jcc-ms-card-soon" id="jcc-ms-del-channel" disabled>
-          <span class="jcc-ms-card-icon">&#x1F4E1;</span>
-          <span class="jcc-ms-card-title">Channel Breakdown</span>
-          <span class="jcc-ms-card-desc">Analyse performance by channel &mdash; Email, SMS, Push, In-App &mdash; with click-through and engagement rates.</span>
-          <span class="jcc-ms-coming-soon">Coming Soon</span>
-        </button>
       </div>
     </div>
 

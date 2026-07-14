@@ -409,6 +409,11 @@ body.jcc-no-scroll {
   gap: 0.75rem;
 }
 
+/* prevent the "← Home" back button from stretching to full header row height */
+.jcc-back-btn {
+  align-self: center;
+}
+
 .jcc-hi {
   font-size: 2rem;
   line-height: 1;
