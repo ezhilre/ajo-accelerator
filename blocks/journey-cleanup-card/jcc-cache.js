@@ -38,6 +38,9 @@ function openDb() {
     };
     req.onsuccess = (e) => { _db = e.target.result; resolve(_db); };
     req.onerror = () => reject(req.error);
+    // If another tab is blocking the version upgrade, reject immediately so
+    // callers can fall back gracefully instead of hanging indefinitely.
+    req.onblocked = () => reject(new Error('IDB open blocked by another tab'));
   });
 }
 
