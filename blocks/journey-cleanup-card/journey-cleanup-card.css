@@ -409,9 +409,38 @@ body.jcc-no-scroll {
   gap: 0.75rem;
 }
 
-/* prevent the "← Home" back button from stretching to full header row height */
-.jcc-back-btn {
-  align-self: center;
+/* prevent the "← Home" back button from stretching to full header row height
+   Use !important to beat EDS decorateButtons() which adds class="button" and
+   applies button.button { background: var(--text-color) } at high specificity */
+.jcc-back-btn,
+button.jcc-back-btn,
+button.button.jcc-back-btn {
+  align-self: center !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #1473e6 !important;
+  border: 1px solid #1473e6 !important;
+  border-radius: 16px !important;
+  padding: 0.5rem 1rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
+}
+
+.jcc-back-btn:hover,
+button.jcc-back-btn:hover,
+button.button.jcc-back-btn:hover {
+  background: rgba(20, 115, 230, 0.06) !important;
+  background-color: rgba(20, 115, 230, 0.06) !important;
+  color: #1473e6 !important;
 }
 
 .jcc-hi {
