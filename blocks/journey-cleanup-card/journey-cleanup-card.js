@@ -844,13 +844,25 @@ function showCacheBanner(root, snap, cfg) {
 // ─── dashboard ────────────────────────────────────────────────────────────────
 
 async function showDashboard(root, cfg) {
-  // Check for cached snapshot before fetching from API
+  // Check for cached snapshot before fetching from API.
+  // Use a 2-second timeout (same pattern as loadMonth) so a hung/blocked IDB
+  // never silently stalls the function — which would look like "no action" to the user.
   let cachedSnap = null;
-  try { cachedSnap = await loadSnapshot(cfg.sandbox); } catch (_) { /* ignore IDB errors */ }
+  try {
+    cachedSnap = await Promise.race([
+      loadSnapshot(cfg.sandbox),
+      new Promise((resolve) => { setTimeout(() => resolve(null), 2000); }),
+    ]);
+  } catch (_) { /* ignore IDB errors */ }
 
   // Also check whether any OTHER sandboxes are cached — if so, always show the switcher
   let otherSnaps = [];
-  try { otherSnaps = await listSnapshots(); } catch (_) { /* ignore */ }
+  try {
+    otherSnaps = await Promise.race([
+      listSnapshots(),
+      new Promise((resolve) => { setTimeout(() => resolve([]), 2000); }),
+    ]);
+  } catch (_) { /* ignore */ }
   const hasAnyCached = cachedSnap || otherSnaps.length > 0;
 
   if (hasAnyCached) {
