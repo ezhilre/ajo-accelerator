@@ -271,7 +271,7 @@ function showModeSelect(root, cfg) {
   wrap.className = 'jcc-mode-select';
   wrap.innerHTML = `
     <div class="jcc-ms-header">
-      <span class="jcc-ms-icon">&#x1F916;</span>
+      <span class="jcc-ms-icon">&#x1F9EC;</span>
       <div>
         <h2 class="jcc-ms-title">AI Assisted Journey Governance Dashboard</h2>
         <p class="jcc-ms-sub">Connected to sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
@@ -935,7 +935,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '<div class="jcc-header">',
     '  <div class="jcc-header-left">',
     '    <button class="jcc-btn-sec jcc-back-btn" id="jr-back">&#x2190; Home</button>',
-    '    <span class="jcc-hi">&#x1F916;</span><div>',
+    '    <span class="jcc-hi">&#x1F9EC;</span><div>',
     '    <h2 class="jcc-title">AI Assisted Journey Governance Dashboard</h2>',
     `    <p class="jcc-sub">Journeys not modified in <strong>${STALE_DAYS}+ days</strong></p>`,
     '  </div></div>',
@@ -3171,7 +3171,7 @@ function showPreDash(root) {
   root.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'jcc-pre-dash';
-  wrap.innerHTML = '<span class="jcc-pre-icon">&#x1F916;</span>'
+  wrap.innerHTML = '<span class="jcc-pre-icon">&#x1F9EC;</span>'
     + '<p style="font-size:1.1rem;font-weight:600;color:#2c2c2c;margin:0">AI Assisted Journey Governance Dashboard</p>'
     + '<p style="color:#6e6e6e;margin:0.25rem 0 1rem;font-size:0.9rem">No credentials configured.</p>'
     + '<button class="jcc-btn-primary jcc-pre-open-cfg">&#x2699;&#xFE0F; Configure Credentials</button>';
