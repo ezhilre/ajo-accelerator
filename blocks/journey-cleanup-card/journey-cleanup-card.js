@@ -1613,9 +1613,9 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         applyRuleScores(liveTargets);
         if (aiEnabled) {
           if (aiRunning && agentPool) {
-            // Already running — enqueue live journeys into existing pool
+            // Already running — add live journeys to the existing pool without resetting counters
             pendingAiTargets = [...pendingAiTargets, ...liveTargets];
-            agentPool.enqueue(liveTargets);
+            agentPool.addMore(liveTargets);
             aiPl.textContent = `\uD83E\uDD16 LLM: added ${liveTargets.length} live journeys \u2014 now ${pendingAiTargets.length} total\u2026`;
           } else if (!aiRunning && !loading) {
             // Fetch is done, AI completed — collect ALL unscored journeys (draft + live)

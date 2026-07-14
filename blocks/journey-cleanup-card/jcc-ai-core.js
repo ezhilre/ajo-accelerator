@@ -212,6 +212,16 @@ export function createAgentPool({
       const n = Math.min(concurrency, journeys.length);
       for (let i = 0; i < n; i += 1) worker();
     },
+    // Append additional journeys to an already-running pool without resetting progress counters.
+    // Used when "Include live journeys" is toggled mid-run to add live/deployed journeys.
+    addMore(journeys) {
+      if (!journeys.length) return;
+      total += journeys.length;
+      queue.push(...journeys);
+      // Spawn extra workers up to concurrency limit (existing workers may already be draining)
+      const active = Math.min(concurrency, journeys.length);
+      for (let i = 0; i < active; i += 1) worker();
+    },
     stop() { stopped = true; queue.length = 0; },
     resetProxyDown() { consecutiveFails = 0; proxyDownFired = false; },
   };
