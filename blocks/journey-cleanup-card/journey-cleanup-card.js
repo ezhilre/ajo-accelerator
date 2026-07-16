@@ -945,17 +945,19 @@ function showCacheBanner(root, snap, cfg) {
           try { targetSnap = await loadSnapshot(targetSandbox); } catch (_) { /* ignore */ }
 
           if (targetSnap) {
-            // Re-render the cache banner for the new sandbox, then resolve as 'switch'
+            // Re-render the cache banner for the new sandbox, then propagate the result
             showCacheBanner(root, targetSnap, newCfg).then((choice) => {
-              // Propagate the choice with the updated cfg
-              if (choice === 'cache') resolve({ action: 'cache', cfg: newCfg, snap: targetSnap });
-              else if (choice === 'fresh') resolve({ action: 'fresh', cfg: newCfg });
-              else if (choice === 'clear') resolve({ action: 'clear', cfg: newCfg });
-              else if (choice && typeof choice === 'object') resolve(choice);
+              // choice is always an object {action, cfg, snap?} — propagate as-is
+              if (choice && typeof choice === 'object') {
+                resolve(choice);
+              } else {
+                // Fallback: legacy string values
+                resolve({ action: choice, cfg: newCfg });
+              }
             });
           } else {
-            // No cache for that sandbox — go straight to fresh analysis
-            resolve({ action: 'fresh', cfg: newCfg });
+            // No cache for that sandbox — show preflight so user can configure AI before fresh fetch
+            resolve({ action: 'preflight', cfg: newCfg });
           }
         });
       });
