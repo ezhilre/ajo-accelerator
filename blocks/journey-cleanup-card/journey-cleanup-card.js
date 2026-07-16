@@ -64,6 +64,21 @@ function saveAiSettings(s) { try { localStorage.setItem(AI_SETTINGS_KEY, JSON.st
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
+/**
+ * Returns true if the raw API journey status matches any of the user-selected
+ * target statuses stored in the aiStatusTargets Set.
+ * 'live' chip covers both 'live' and 'deployed'.
+ * 'finished' chip covers both 'finished' and 'closed'.
+ */
+function statusMatchesTargets(apiStatus, targets) {
+  if (targets.has('draft')    && apiStatus === 'draft')                           return true;
+  if (targets.has('live')     && (apiStatus === 'live' || apiStatus === 'deployed')) return true;
+  if (targets.has('stopped')  && apiStatus === 'stopped')                         return true;
+  if (targets.has('finished') && (apiStatus === 'finished' || apiStatus === 'closed')) return true;
+  if (targets.has('failed')   && apiStatus === 'failed')                          return true;
+  return false;
+}
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 async function apiGet(cfg, page, signal) {
@@ -336,9 +351,150 @@ function showModeSelect(root, cfg) {
     <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
   `;
   root.appendChild(wrap);
-  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showDashboard(root, cfg));
+  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showAiPreflightModal(root, cfg));
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
   wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
+}
+
+// ─── AI pre-flight modal (shown before fetch starts) ─────────────────────────
+// Lets the user configure Smart AI Analyze, status targets and proxy URL
+// before any API call is made.
+
+function showAiPreflightModal(root, cfg) {
+  document.querySelector('.jcc-preflight-overlay')?.remove();
+
+  const aiSaved = getAiSettings();
+  let aiEnabled = !!aiSaved.enabled;
+  const aiStatusTargets = new Set(aiSaved.statusTargets || ['draft']);
+  let proxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'jcc-preflight-overlay';
+
+  function chk(s) { return aiStatusTargets.has(s) ? ' jcc-ai-sc-active' : ''; }
+
+  overlay.innerHTML = `
+    <div class="jcc-preflight-box" role="dialog" aria-modal="true" aria-label="AI Analysis Settings">
+      <div class="jcc-preflight-hdr">
+        <span class="jcc-preflight-icon">🤖</span>
+        <div>
+          <p class="jcc-preflight-title">AI Analysis Settings</p>
+          <p class="jcc-preflight-sub">Configure before fetching journeys &mdash; sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
+        </div>
+      </div>
+
+      <div class="jcc-preflight-body">
+
+        <!-- AI enable toggle -->
+        <div class="jcc-preflight-row">
+          <label class="jcc-ai-toggle-lbl jcc-preflight-ai-lbl" for="jcc-pf-ai-chk">
+            <input type="checkbox" id="jcc-pf-ai-chk"${aiEnabled ? ' checked' : ''} />
+            <span>🧠 Smart AI Analyze</span>
+          </label>
+          <span class="jcc-preflight-ai-hint">When ON: journeys are scored by LLM after loading. OFF = instant rule scoring only.</span>
+        </div>
+
+        <!-- AI config (proxy + health) — shown only when AI is ON -->
+        <div class="jcc-preflight-ai-block" id="jcc-pf-ai-block" style="display:${aiEnabled ? 'flex' : 'none'}">
+          <div class="jcc-ai-cfg">
+            <label class="jcc-ai-cfg-lbl" for="jcc-pf-ai-url">Proxy URL:</label>
+            <input id="jcc-pf-ai-url" class="jcc-ai-url" type="text" value="${esc(proxyUrl)}" placeholder="http://localhost:3001" />
+            <button id="jcc-pf-health" class="jcc-btn-health">🔍 Test</button>
+            <span id="jcc-pf-ai-status" class="jcc-ai-status jcc-ai-s-unknown">● Not checked</span>
+          </div>
+
+          <!-- Status chip multi-select -->
+          <div class="jcc-preflight-chips-row">
+            <span class="jcc-preflight-chips-lbl">Score these statuses:</span>
+            <div class="jcc-ai-status-chips" id="jcc-pf-chips">
+              <button class="jcc-ai-sc-btn${chk('draft')}"    data-status="draft">Draft</button>
+              <button class="jcc-ai-sc-btn${chk('live')}"     data-status="live">Live</button>
+              <button class="jcc-ai-sc-btn${chk('stopped')}"  data-status="stopped">Stopped</button>
+              <button class="jcc-ai-sc-btn${chk('finished')}" data-status="finished">Finished</button>
+              <button class="jcc-ai-sc-btn${chk('failed')}"   data-status="failed">Failed</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="jcc-preflight-footer">
+        <button class="jcc-btn-secondary" id="jcc-pf-cancel">✖ Cancel</button>
+        <button class="jcc-btn-primary"   id="jcc-pf-start">📥 Start Analysis</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const aiChkEl      = overlay.querySelector('#jcc-pf-ai-chk');
+  const aiBlock      = overlay.querySelector('#jcc-pf-ai-block');
+  const aiUrlEl      = overlay.querySelector('#jcc-pf-ai-url');
+  const aiStatusEl   = overlay.querySelector('#jcc-pf-ai-status');
+  const healthBtn    = overlay.querySelector('#jcc-pf-health');
+  const chipsEl      = overlay.querySelector('#jcc-pf-chips');
+  const startBtn     = overlay.querySelector('#jcc-pf-start');
+  const cancelBtn    = overlay.querySelector('#jcc-pf-cancel');
+
+  function dismiss() { overlay.remove(); }
+
+  // Toggle AI block visibility
+  aiChkEl.addEventListener('change', () => {
+    aiEnabled = aiChkEl.checked;
+    aiBlock.style.display = aiEnabled ? 'flex' : 'none';
+  });
+
+  // Proxy URL update
+  aiUrlEl.addEventListener('change', () => {
+    proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
+  });
+
+  // Health check
+  async function testProxy() {
+    aiStatusEl.className = 'jcc-ai-status jcc-ai-s-unknown';
+    aiStatusEl.textContent = '● Checking…';
+    const health = await checkProxyHealth(proxyUrl);
+    if (health.ok) {
+      aiStatusEl.className = 'jcc-ai-status jcc-ai-s-ok';
+      aiStatusEl.textContent = `● Connected — ${health.model || 'unknown model'}`;
+    } else {
+      aiStatusEl.className = 'jcc-ai-status jcc-ai-s-err';
+      aiStatusEl.textContent = `● Offline: ${health.error || 'unreachable'}`;
+    }
+  }
+  healthBtn.addEventListener('click', () => {
+    proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
+    testProxy();
+  });
+  // Auto-test if AI is already on
+  if (aiEnabled) testProxy();
+
+  // Status chip toggles
+  chipsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.jcc-ai-sc-btn');
+    if (!btn) return;
+    const status = btn.dataset.status;
+    if (aiStatusTargets.has(status)) {
+      aiStatusTargets.delete(status);
+      btn.classList.remove('jcc-ai-sc-active');
+    } else {
+      aiStatusTargets.add(status);
+      btn.classList.add('jcc-ai-sc-active');
+    }
+  });
+
+  // Cancel
+  cancelBtn.addEventListener('click', dismiss);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss(); });
+
+  // Start — persist settings then launch dashboard
+  startBtn.addEventListener('click', () => {
+    proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
+    saveAiSettings({ enabled: aiEnabled, proxyUrl, statusTargets: [...aiStatusTargets] });
+    dismiss();
+    showDashboard(root, cfg);
+  });
 }
 
 // ─── journey id lookup ────────────────────────────────────────────────────────
@@ -905,7 +1061,8 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
 
   const aiSaved = getAiSettings();
   let aiEnabled = !!aiSaved.enabled;
-  let includeLive = false; // always defaults OFF — not persisted across sessions
+  // Which statuses to send to LLM — user-controlled multi-select, defaults to draft only
+  const aiStatusTargets = new Set(aiSaved.statusTargets || ['draft']);
   let proxyUrl = aiSaved.proxyUrl || 'http://localhost:3001';
   // Hydrate from cache if provided; otherwise start empty
   const aiScores = initialScores || new Map();
@@ -969,10 +1126,14 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     '      <span>&#x1F916; Smart AI Analyze</span>',
     '    </label>',
     '    <span class="jcc-ai-tip">When ON: LLM scores <strong>draft</strong> journeys after loading. OFF = instant rule scoring only.</span>',
-    '    <label class="jcc-ai-toggle-lbl jcc-ai-live-lbl" title="Also run LLM on live (deployed) journeys — slower but catches risky live campaigns">',
-    `      <input type="checkbox" id="jcc-ai-live-chk"${includeLive ? ' checked' : ''} />`,
-    '      <span>📡 Include live journeys</span>',
-    '    </label>',
+    '    <div class="jcc-ai-status-chips" id="jcc-ai-status-chips">',
+    '      <span class="jcc-ai-sc-lbl">Score statuses:</span>',
+    `      <button class="jcc-ai-sc-btn${aiStatusTargets.has('draft') ? ' jcc-ai-sc-active' : ''}" data-status="draft">Draft</button>`,
+    `      <button class="jcc-ai-sc-btn${aiStatusTargets.has('live') ? ' jcc-ai-sc-active' : ''}" data-status="live">Live</button>`,
+    `      <button class="jcc-ai-sc-btn${aiStatusTargets.has('stopped') ? ' jcc-ai-sc-active' : ''}" data-status="stopped">Stopped</button>`,
+    `      <button class="jcc-ai-sc-btn${aiStatusTargets.has('finished') ? ' jcc-ai-sc-active' : ''}" data-status="finished">Finished</button>`,
+    `      <button class="jcc-ai-sc-btn${aiStatusTargets.has('failed') ? ' jcc-ai-sc-active' : ''}" data-status="failed">Failed</button>`,
+    '    </div>',
     '    <div class="jcc-ai-cfg" id="jcc-ai-cfg">',
     '      <label class="jcc-ai-cfg-lbl" for="jcc-ai-url">Proxy:</label>',
     `      <input id="jcc-ai-url" class="jcc-ai-url" type="text" value="${esc(proxyUrl)}" placeholder="http://localhost:3001" />`,
@@ -1096,7 +1257,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   const aiCfg = dash.querySelector('#jcc-ai-cfg');
   const aiUrlEl = dash.querySelector('#jcc-ai-url');
   const aiStatusEl = dash.querySelector('#jcc-ai-status');
-  const aiLiveChk = dash.querySelector('#jcc-ai-live-chk');
+  const aiStatusChips = dash.querySelector('#jcc-ai-status-chips');
   const aiHealthBtn = dash.querySelector('#jcc-ai-health-chk');
   const aiStopBtn = dash.querySelector('#jcc-ai-stop');
   const aiCountsEl = dash.querySelector('#jcc-ai-counts');
@@ -1596,45 +1757,51 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
     render();
   });
 
-  aiLiveChk.addEventListener('change', () => {
-    includeLive = aiLiveChk.checked;
-    // not persisted — resets to false on next page load
+  // Multi-select status chip toggle
+  aiStatusChips?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.jcc-ai-sc-btn');
+    if (!btn) return;
+    const status = btn.dataset.status;
+    if (aiStatusTargets.has(status)) {
+      aiStatusTargets.delete(status);
+      btn.classList.remove('jcc-ai-sc-active');
+    } else {
+      aiStatusTargets.add(status);
+      btn.classList.add('jcc-ai-sc-active');
+    }
+    // Persist selection
+    saveAiSettings({ enabled: aiEnabled, proxyUrl, statusTargets: [...aiStatusTargets] });
 
-    // If AI is already running or fetch is done, recompute targets and add live journeys
-    if (includeLive && all.length > 0) {
+    // If fetch is already done and AI is idle, re-run on newly added statuses
+    if (all.length > 0 && aiEnabled && !aiRunning && !loading) {
       const co = cutoff();
-      const liveTargets = all.filter((j) => {
+      const allUnscoredTargets = all.filter((j) => {
         if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
         const s = (j.status || '').toLowerCase();
-        return (s === 'live' || s === 'deployed') && !(aiScores.get(j.id)?.llm);
+        const alreadyScored = !!(aiScores.get(j.id)?.llm && !aiScores.get(j.id)?.llm.error);
+        if (alreadyScored) return false;
+        return statusMatchesTargets(s, aiStatusTargets);
       });
-      if (liveTargets.length > 0) {
-        // Apply rule scores first
-        applyRuleScores(liveTargets);
-        if (aiEnabled) {
-          if (aiRunning && agentPool) {
-            // Already running — add live journeys to the existing pool without resetting counters
-            pendingAiTargets = [...pendingAiTargets, ...liveTargets];
-            agentPool.addMore(liveTargets);
-            aiPl.textContent = `\uD83E\uDD16 LLM: added ${liveTargets.length} live journeys \u2014 now ${pendingAiTargets.length} total\u2026`;
-          } else if (!aiRunning && !loading) {
-            // Fetch is done, AI completed — collect ALL unscored journeys (draft + live)
-            // so the progress counter reflects the true combined total
-            const allUnscoredTargets = all.filter((j) => {
-              if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
-              const s = (j.status || '').toLowerCase();
-              const alreadyScored = !!(aiScores.get(j.id)?.llm && !aiScores.get(j.id)?.llm.error);
-              if (alreadyScored) return false;
-              return s === 'draft' || s === 'live' || s === 'deployed';
-            });
-            if (allUnscoredTargets.length > 0) {
-              applyRuleScores(allUnscoredTargets);
-              aiPl.textContent = `\uD83E\uDD16 Starting LLM on ${allUnscoredTargets.length} journeys (draft + live)\u2026`;
-              startAI(allUnscoredTargets);
-            }
-          }
-        }
-        applyF();
+      if (allUnscoredTargets.length > 0) {
+        applyRuleScores(allUnscoredTargets);
+        aiPl.textContent = `\uD83E\uDD16 Starting LLM on ${allUnscoredTargets.length} newly selected journeys\u2026`;
+        startAI(allUnscoredTargets);
+      }
+    } else if (aiRunning && agentPool) {
+      // AI already running — add newly selected unscored journeys to pool
+      const co = cutoff();
+      const newTargets = all.filter((j) => {
+        if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
+        const s = (j.status || '').toLowerCase();
+        const alreadyScored = !!(aiScores.get(j.id)?.llm && !aiScores.get(j.id)?.llm.error);
+        if (alreadyScored) return false;
+        return statusMatchesTargets(s, aiStatusTargets) && !pendingAiTargets.find((p) => p.id === j.id);
+      });
+      if (newTargets.length > 0) {
+        applyRuleScores(newTargets);
+        pendingAiTargets = [...pendingAiTargets, ...newTargets];
+        agentPool.addMore(newTargets);
+        aiPl.textContent = `\uD83E\uDD16 LLM: added ${newTargets.length} journeys \u2014 ${pendingAiTargets.length} total\u2026`;
       }
     }
   });
@@ -1745,13 +1912,11 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
         updSummary(); updOwnerFilter(); applyF();
 
         const co = cutoff();
-        // Default: LLM on draft journeys only. "Include live" adds live/deployed journeys.
+        // Send to LLM only statuses selected by the user in the multi-select chips
         const staleTargets = final.filter((j) => {
           if (!(new Date(j.metadata?.lastModifiedAt) < co)) return false;
           const s = (j.status || '').toLowerCase();
-          if (s === 'draft') return true;
-          if (includeLive && (s === 'live' || s === 'deployed')) return true;
-          return false;
+          return statusMatchesTargets(s, aiStatusTargets);
         });
 
         if (aiEnabled) {

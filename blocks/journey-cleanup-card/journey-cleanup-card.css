@@ -827,17 +827,170 @@ button.button.jcc-idl-back {
   font-style: italic;
 }
 
-/* "Include live journeys" secondary checkbox — amber tint to signal extra cost */
-.jcc-ai-live-lbl {
-  border: 1px solid #f4d48a;
-  background: #fffbf0;
-  border-radius: 12px;
-  padding: 0.2rem 0.65rem;
-  font-size: 0.8rem;
+/* ── Multi-select LLM status chips ──────────────────────────────────────── */
+
+.jcc-ai-status-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
-.jcc-ai-live-lbl:hover {
-  background: #fce7c0;
+.jcc-ai-sc-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e6e6e;
+  white-space: nowrap;
+  margin-right: 0.1rem;
+}
+
+.jcc-ai-sc-btn {
+  border: 1.5px solid #c9d8ff;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #4b4b4b;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  user-select: none;
+}
+
+.jcc-ai-sc-btn:hover {
+  background: #ebf0ff;
+  border-color: #1473e6;
+  color: #1473e6;
+}
+
+/* Active = this status WILL be sent to the LLM */
+.jcc-ai-sc-btn.jcc-ai-sc-active {
+  background: #1473e6;
+  border-color: #1473e6;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(20, 115, 230, 0.28);
+}
+
+.jcc-ai-sc-btn.jcc-ai-sc-active:hover {
+  background: #0d66d0;
+  border-color: #0d66d0;
+}
+
+/* ── AI pre-flight modal ─────────────────────────────────────────────────── */
+
+.jcc-preflight-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: jcc-fade-in 0.2s ease;
+}
+
+.jcc-preflight-box {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 560px;
+  overflow: hidden;
+  animation: jcc-slide-up 0.22s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.jcc-preflight-hdr {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: linear-gradient(135deg, #1473e6 0%, #7e5fcf 100%);
+  padding: 1.1rem 1.5rem;
+  color: #fff;
+}
+
+.jcc-preflight-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.jcc-preflight-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+  color: #fff;
+}
+
+.jcc-preflight-sub {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.82);
+  margin: 0;
+}
+
+.jcc-preflight-body {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.jcc-preflight-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.jcc-preflight-ai-hint {
+  font-size: 0.73rem;
+  color: #6e6e6e;
+  font-style: italic;
+  flex: 1;
+  min-width: 180px;
+}
+
+.jcc-preflight-ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+  border: 1px solid #c9d8ff;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.jcc-preflight-chips-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.jcc-preflight-chips-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4b4b4b;
+  white-space: nowrap;
+}
+
+.jcc-preflight-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e1e1e1;
+  background: #fafafa;
 }
 
 /* stop button */

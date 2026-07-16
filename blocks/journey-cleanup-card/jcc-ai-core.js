@@ -102,11 +102,18 @@ export async function scoreSingleLLM(journey, proxyUrl, timeoutMs = 360_000) {
 
 export async function checkProxyHealth(proxyUrl) {
   try {
-    const res = await fetch(`${proxyUrl}/health`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${proxyUrl}/health`, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     const data = await res.json();
     return { ok: data.status === 'ok', model: data.model };
-  } catch (e) { return { ok: false, error: e.message }; }
+  } catch (e) {
+    // AbortSignal.timeout() fires a DOMException with name 'TimeoutError' and
+    // message 'signal timed out' — surface a clearer message for the UI banner.
+    const msg = e.name === 'TimeoutError'
+      ? 'Health check timed out (proxy may be slow to respond — check it is running)'
+      : e.message;
+    return { ok: false, error: msg };
+  }
 }
 
 export async function fetchTokenStats(proxyUrl) {
@@ -117,7 +124,7 @@ export async function fetchTokenStats(proxyUrl) {
   } catch (_) { return null; }
 }
 
-const PROXY_DOWN_THRESHOLD = 3; // consecutive failures before declaring proxy down
+const PROXY_DOWN_THRESHOLD = 5; // consecutive failures before declaring proxy down
 
 export function createAgentPool({
   cfg, proxyUrl, concurrency = AI_AGENT_CONCURRENCY, detailCache,
