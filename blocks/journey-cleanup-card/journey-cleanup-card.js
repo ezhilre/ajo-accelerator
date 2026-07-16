@@ -351,7 +351,7 @@ function showModeSelect(root, cfg) {
     <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
   `;
   root.appendChild(wrap);
-  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showAiPreflightModal(root, cfg));
+  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showDashboard(root, cfg));
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
   wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
 }
@@ -961,7 +961,7 @@ function showCacheBanner(root, snap, cfg) {
       });
 
       el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve({ action: 'cache', cfg, snap }));
-      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'fresh', cfg }));
+      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'preflight', cfg }));
       el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve({ action: 'clear', cfg }));
     }).catch(() => {
       // Fallback: IndexedDB unavailable — show simple banner
@@ -991,7 +991,7 @@ function showCacheBanner(root, snap, cfg) {
       root.appendChild(el);
       el.querySelector('#jcc-cb-back-btn-fb').addEventListener('click', () => resolve({ action: 'back', cfg }));
       el.querySelector('.jcc-cb-load').addEventListener('click', () => resolve({ action: 'cache', cfg, snap }));
-      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'fresh', cfg }));
+      el.querySelector('.jcc-cb-fresh').addEventListener('click', () => resolve({ action: 'preflight', cfg }));
       el.querySelector('.jcc-cb-clear').addEventListener('click', () => resolve({ action: 'clear', cfg }));
     });
   });
@@ -1044,6 +1044,11 @@ async function showDashboard(root, cfg) {
     }
     if (action === 'clear') {
       try { await clearSnapshot(resolvedCfg.sandbox); } catch (_) { /* ignore */ }
+    }
+    if (action === 'preflight') {
+      // "Run fresh analysis" from cache banner — show AI settings before fetching
+      showAiPreflightModal(root, resolvedCfg);
+      return;
     }
     // 'fresh' or no-cache: fall through to live fetch with the (possibly switched) cfg
     showDashboardCore(root, resolvedCfg, null, null, null);
