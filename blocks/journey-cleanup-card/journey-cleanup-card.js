@@ -2445,6 +2445,9 @@ async function fetchAllJourneysForMonth(cfg, year, month, onProgress) {
     resultSets.forEach((rs) => {
       const j = rs?.data;
       if (!j || !j.id || seen.has(j.id)) return;
+      // Skip Dry Run journeys — they run in simulation mode and deliver no real messages
+      const displayState = (j.custom?.displayState || '').toLowerCase();
+      if (displayState === 'dryrun' || displayState === 'dry_run' || displayState === 'dry run') return;
       seen.add(j.id);
       journeys.push({
         campaignId: j.id,
