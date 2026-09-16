@@ -15,7 +15,7 @@ import {
 const AJO_BASE = 'https://platform.adobe.io/ajo/journey';
 const PAGE_SIZE = 50;
 const ROWS_PER_PAGE = 20;
-const STALE_DAYS = 30;
+const STALE_DAYS = 7; // Changed from 30 to show journeys 7+ days old
 const SESSION_KEY = 'jcc_cfg';
 const AI_SETTINGS_KEY = 'jcc_ai';
 
