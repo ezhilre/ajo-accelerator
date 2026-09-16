@@ -1959,7 +1959,7 @@ function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
   }
 
   // Snap info button — re-run fresh analysis
-  dash.querySelector('#jcc-snap-info .jcc-snap-refresh')?.addEventListener('click', () => showDashboard(root, cfg));
+  dash.querySelector('#jcc-snap-info .jcc-snap-refresh')?.addEventListener('click', () => showAiPreflightModal(root, cfg));
 
   // If loaded from cache, skip startLoad and render directly
   if (initialJourneys) {
