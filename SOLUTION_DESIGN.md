@@ -348,7 +348,80 @@ Returns `[{id, name}]` with deduplication via `Map<id, audience>`.
 
 ---
 
-## 6. API Reference — All Endpoints
+## 6. Agent Architecture & Memory Sharing
+
+### 6.1 Agent Inventory
+
+The AI proxy implements a **2-agent pipeline** for journey analysis:
+
+| Agent | File | Responsibility | Inputs | Outputs |
+|---|---|---|---|---|
+| **Agent 1** | `audience-agent.js` | Audience Resolver | Audience IDs + Adobe credentials | Plain-English audience descriptions |
+| **Agent 2** | `scoring-agent.js` | Journey Scorer | Journey object + resolved audiences | Structured JSON governance verdict |
+
+**Important**: There is **NO "BRD Extraction Agent"** in this codebase. There are no `brd_use_cases` references or Business Requirements Document extraction features. The system focuses solely on journey governance and retirement scoring.
+
+### 6.2 Inter-Agent Data Flow
+
+```
+Journey ID + Adobe credentials
+        ↓
+   [Agent 1: Audience Resolver]
+    • Fetches audience definitions from Adobe UPS API
+    • Normalizes PQL/AST expressions (pure JS, no LLM)
+    • Converts to plain-English descriptions via LLM
+        ↓
+    resolvedAudiences[]
+        ↓
+   [Agent 2: Journey Scorer]
+    • Receives journey object + resolvedAudiences
+    • Extracts canvas nodes and builds flow path
+    • Derives business intent signals
+    • Constructs comprehensive scoring prompt
+    • Calls LLM for structured governance verdict
+        ↓
+    ScoringResult JSON
+```
+
+### 6.3 Memory Sharing Mechanism
+
+**No shared state between agents** — data flows forward-only through function parameters:
+
+```javascript
+// Server route (ai-proxy/server.js)
+POST /score:
+  journey = req.body.journey
+  cfg     = req.body.cfg
+  
+  // Agent 1 (stateless)
+  audiences        = extractAllAudiences(journey)
+  resolvedAudiences = await resolveJourneyAudiences(audiences, cfg)
+  
+  // Agent 2 (stateless)
+  enriched = enrichJourney(journey)
+  result   = await scoreJourney(enriched, resolvedAudiences)
+  
+  return result
+```
+
+**Key characteristics:**
+- Both agents are **pure functions** — no singleton state or global variables
+- Each journey scoring is **isolated** — no cross-journey memory
+- Credentials passed per-request — server holds no persistent auth state
+- Journey detail cache is request-scoped (lives in agent pool, not global)
+
+### 6.4 What This System Does NOT Do
+
+❌ **No BRD extraction** — does not analyze Business Requirements Documents  
+❌ **No document parsing** — does not process PDFs, Word docs, or specifications  
+❌ **No use case libraries** — does not maintain `brd_use_cases` or similar knowledge bases  
+❌ **No training data collection** — does not build datasets from analyzed journeys  
+
+The system is narrowly scoped to **governance automation for AJO journeys** using real-time LLM analysis of operational metadata.
+
+---
+
+## 7. API Reference — All Endpoints
 
 ### `GET /health`
 

@@ -351,7 +351,10 @@ function showModeSelect(root, cfg) {
     <p class="jcc-ms-note">&#x1F512; Credentials stored in sessionStorage only.</p>
   `;
   root.appendChild(wrap);
-  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => showDashboard(root, cfg));
+  wrap.querySelector('#jcc-ms-all').addEventListener('click', () => {
+    // Always show AI preflight modal before starting analysis
+    showAiPreflightModal(root, cfg);
+  });
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
   wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
 }
@@ -1011,6 +1014,7 @@ async function showDashboard(root, cfg) {
   try { otherSnaps = await listSnapshots(); } catch (_) { /* ignore */ }
   const hasAnyCached = cachedSnap || otherSnaps.length > 0;
 
+  // If there's cached data (current sandbox or others), show the cache banner with options
   if (hasAnyCached) {
     // If current sandbox has no snapshot, create a synthetic placeholder so the banner
     // can still show the switcher tabs for other sandboxes
@@ -1052,12 +1056,14 @@ async function showDashboard(root, cfg) {
       showAiPreflightModal(root, resolvedCfg);
       return;
     }
-    // 'fresh' or no-cache: fall through to live fetch with the (possibly switched) cfg
-    showDashboardCore(root, resolvedCfg, null, null, null);
+    // 'fresh' or no-cache: show preflight modal to configure AI settings before fetch
+    showAiPreflightModal(root, resolvedCfg);
     return;
   }
 
-  showDashboardCore(root, cfg, null, null, null);
+  // No cache exists at all — user must configure AI settings via preflight modal
+  // (this code path should not be reached since mode select now calls showAiPreflightModal directly)
+  showAiPreflightModal(root, cfg);
 }
 
 function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
