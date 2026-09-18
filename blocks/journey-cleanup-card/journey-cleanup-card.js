@@ -352,8 +352,8 @@ function showModeSelect(root, cfg) {
   `;
   root.appendChild(wrap);
   wrap.querySelector('#jcc-ms-all').addEventListener('click', () => {
-    // Always show AI preflight modal before starting analysis
-    showAiPreflightModal(root, cfg);
+    // Check for cache first, then show appropriate UI (cache banner or preflight modal)
+    showDashboard(root, cfg);
   });
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
   wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
