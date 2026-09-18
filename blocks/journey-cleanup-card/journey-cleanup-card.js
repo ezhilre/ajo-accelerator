@@ -1061,9 +1061,8 @@ async function showDashboard(root, cfg) {
     return;
   }
 
-  // No cache exists at all — user must configure AI settings via preflight modal
-  // (this code path should not be reached since mode select now calls showAiPreflightModal directly)
-  showAiPreflightModal(root, cfg);
+  // No cache exists — start fresh analysis
+  showDashboardCore(root, cfg, null, null, null);
 }
 
 function showDashboardCore(root, cfg, initialJourneys, initialScores, snap) {
