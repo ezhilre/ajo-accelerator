@@ -496,7 +496,8 @@ function showAiPreflightModal(root, cfg) {
     proxyUrl = aiUrlEl.value.trim() || 'http://localhost:3001';
     saveAiSettings({ enabled: aiEnabled, proxyUrl, statusTargets: [...aiStatusTargets] });
     dismiss();
-    showDashboard(root, cfg);
+    // Call showDashboardCore directly to start fresh analysis (bypass cache check)
+    showDashboardCore(root, cfg, null, null, null);
   });
 }
 
