@@ -831,21 +831,29 @@ function extractJourneyId(input) {
 // Delete a single journey via API
 async function deleteJourney(cfg, journeyId) {
   const url = `https://journey-private.adobe.io/authoring/journeyVersions/${encodeURIComponent(journeyId)}`;
+  
+  // Clean token: remove any whitespace, newlines, and handle Bearer prefix properly
+  const rawToken = String(cfg.token || '').replace(/\s+/g, ' ').trim();
+  const authHeader = rawToken.toLowerCase().startsWith('bearer ') 
+    ? rawToken 
+    : `Bearer ${rawToken}`;
+  
   const res = await fetch(url, {
     method: 'DELETE',
     headers: {
-      Accept: '*/*',
-      'Content-Type': 'application/json',
+      'Accept': '*/*',
       'x-api-key': 'voyager_ui',
-      'x-gw-ims-org-id': cfg.orgId,
-      'x-sandbox-name': cfg.sandbox,
-      Authorization: `Bearer ${cfg.token}`,
+      'x-gw-ims-org-id': cfg.orgId.trim(),
+      'x-sandbox-name': cfg.sandbox.trim(),
+      'Authorization': authHeader,
     },
   });
   
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    const err = new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   
   return { status: res.status, ok: res.ok };
