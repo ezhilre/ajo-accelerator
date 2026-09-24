@@ -310,6 +310,11 @@ function showModeSelect(root, cfg) {
           <span class="jcc-ms-card-title">Analyze by Journey ID</span>
           <span class="jcc-ms-card-desc">Look up a specific journey by its UUID. Instantly get rule-based and AI risk analysis for that single journey.</span>
         </button>
+        <button class="jcc-ms-card" id="jcc-ms-delete">
+          <span class="jcc-ms-card-icon">&#x1F5D1;</span>
+          <span class="jcc-ms-card-title">Delete Journey</span>
+          <span class="jcc-ms-card-desc">Delete journeys by ID or bulk delete via CSV upload. Includes detailed success/error reporting and audit trail.</span>
+        </button>
       </div>
     </div>
 
@@ -356,6 +361,7 @@ function showModeSelect(root, cfg) {
     showDashboard(root, cfg);
   });
   wrap.querySelector('#jcc-ms-single').addEventListener('click', () => showJourneyIdLookup(root, cfg));
+  wrap.querySelector('#jcc-ms-delete').addEventListener('click', () => showDeleteJourney(root, cfg));
   wrap.querySelector('#jcc-ms-del-summary').addEventListener('click', () => showDeliverySummary(root, cfg));
 }
 
@@ -802,6 +808,441 @@ function showModal(onOk) {
     if (e.shiftKey && document.activeElement === els[0]) { e.preventDefault(); els[els.length - 1].focus(); }
     else if (!e.shiftKey && document.activeElement === els[els.length - 1]) { e.preventDefault(); els[0].focus(); }
   });
+}
+
+// ─── Delete Journey ───────────────────────────────────────────────────────────
+
+// Extract journey UUID from URL or direct UUID input
+function extractJourneyId(input) {
+  if (!input) return null;
+  const trimmed = input.trim();
+  
+  // Direct UUID format check
+  const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  if (uuidPattern.test(trimmed)) return trimmed;
+  
+  // Extract from URL - match the UUID at the end of the path
+  const urlMatch = trimmed.match(/journey\/([a-f0-9-]+)(?:$|\?|#)/i);
+  if (urlMatch && uuidPattern.test(urlMatch[1])) return urlMatch[1];
+  
+  return null;
+}
+
+// Delete a single journey via API
+async function deleteJourney(cfg, journeyId) {
+  const url = `https://journey-private.adobe.io/authoring/journeyVersions/${encodeURIComponent(journeyId)}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Accept: '*/*',
+      'Content-Type': 'application/json',
+      'x-api-key': 'voyager_ui',
+      'x-gw-ims-org-id': cfg.orgId,
+      'x-sandbox-name': cfg.sandbox,
+      Authorization: `Bearer ${cfg.token}`,
+    },
+  });
+  
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
+  
+  return { status: res.status, ok: res.ok };
+}
+
+// Parse error messages with detailed categorization
+function parseDeleteError(err, cfg) {
+  const status = err.status || (err.message.match(/HTTP (\d+)/) || [])[1] || 0;
+  const statusNum = Number(status);
+  
+  if (statusNum === 404) return `Journey not found in sandbox '${cfg.sandbox}'`;
+  if (statusNum === 401) return 'Authentication failed - access token expired';
+  if (statusNum === 403) return 'Insufficient permissions to delete this journey';
+  if (statusNum === 400) return 'Invalid journey ID or journey cannot be deleted';
+  if (statusNum === 409) return 'Journey is currently live and cannot be deleted';
+  if (statusNum >= 500) return `AJO API server error (${statusNum})`;
+  if (err.message?.includes('fetch') || err.message?.includes('network')) {
+    return `Network error: ${err.message}`;
+  }
+  
+  return err.message || 'Unknown error occurred';
+}
+
+// Build CSV report for deletion results
+function buildDeletionReport(results) {
+  const headers = ['Journey ID', 'Status', 'Error Message', 'Timestamp', 'Response Code', 'Duration (ms)'];
+  
+  const rows = results.map((r) => [
+    r.journeyId,
+    r.status,
+    r.errorMessage || '',
+    r.timestamp,
+    r.responseCode || '',
+    r.duration,
+  ].map(csvQ).join(','));
+  
+  return [headers.map(csvQ).join(','), ...rows].join('\r\n');
+}
+
+// Show Delete Journey screen with single/bulk delete tabs
+function showDeleteJourney(root, cfg) {
+  root.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'jcc-id-lookup'; // Reuse similar styling
+  
+  let activeTab = 'single'; // 'single' or 'bulk'
+  const deletionResults = [];
+  let isDeleting = false;
+  
+  function renderScreen() {
+    wrap.innerHTML = `
+      <div class="jcc-idl-header">
+        <button class="jcc-idl-back jcc-btn-sec" id="jcc-del-back">← Back</button>
+        <span class="jcc-idl-header-icon">🗑️</span>
+        <div>
+          <h2 class="jcc-idl-title">Delete Journey</h2>
+          <p class="jcc-idl-sub">Sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
+        </div>
+      </div>
+      
+      <!-- Tab switcher -->
+      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:2px solid #e1e1e1;padding-bottom:0.5rem">
+        <button class="jcc-btn-${activeTab === 'single' ? 'primary' : 'secondary'}" id="jcc-del-tab-single" style="flex:1">
+          Single Delete
+        </button>
+        <button class="jcc-btn-${activeTab === 'bulk' ? 'primary' : 'secondary'}" id="jcc-del-tab-bulk" style="flex:1">
+          Bulk Delete (CSV)
+        </button>
+      </div>
+      
+      <div id="jcc-del-content"></div>
+    `;
+    
+    const content = wrap.querySelector('#jcc-del-content');
+    
+    if (activeTab === 'single') {
+      content.innerHTML = `
+        <div class="jcc-idl-form-wrap">
+          <div class="jcc-idl-form-row">
+            <input id="jcc-del-input" class="jcc-idl-input" type="text"
+              placeholder="Paste Journey ID or URL"
+              autocomplete="off" spellcheck="false" />
+            <button class="jcc-btn-primary" id="jcc-del-submit" ${isDeleting ? 'disabled' : ''}>
+              🗑️ Delete Journey
+            </button>
+          </div>
+          <div id="jcc-del-err" class="jcc-idl-err" style="display:none"></div>
+          <div id="jcc-del-result" style="margin-top:1rem;display:none"></div>
+        </div>
+      `;
+      
+      const inputEl = content.querySelector('#jcc-del-input');
+      const submitBtn = content.querySelector('#jcc-del-submit');
+      const errEl = content.querySelector('#jcc-del-err');
+      const resultEl = content.querySelector('#jcc-del-result');
+      
+      inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !isDeleting) submitBtn.click(); });
+      
+      submitBtn.addEventListener('click', async () => {
+        const input = inputEl.value.trim();
+        errEl.style.display = 'none';
+        resultEl.style.display = 'none';
+        
+        if (!input) {
+          errEl.style.display = 'flex';
+          errEl.textContent = '⚠ Please enter a Journey ID or URL.';
+          return;
+        }
+        
+        const journeyId = extractJourneyId(input);
+        if (!journeyId) {
+          errEl.style.display = 'flex';
+          errEl.textContent = '⚠ Invalid Journey ID or URL format.';
+          return;
+        }
+        
+        // Confirmation
+        if (!confirm(`Are you sure you want to delete journey:\n${journeyId}\n\nThis action cannot be undone.`)) {
+          return;
+        }
+        
+        isDeleting = true;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Deleting...';
+        
+        const startTime = Date.now();
+        const result = {
+          journeyId,
+          status: 'Pending',
+          errorMessage: '',
+          timestamp: new Date().toISOString(),
+          responseCode: null,
+          duration: 0,
+        };
+        
+        try {
+          const res = await deleteJourney(cfg, journeyId);
+          result.status = 'Success';
+          result.responseCode = res.status;
+          result.duration = Date.now() - startTime;
+          deletionResults.push(result);
+          
+          resultEl.style.display = 'block';
+          resultEl.innerHTML = `
+            <div style="background:#cef5e7;border:1px solid #a0dfc6;border-radius:8px;padding:1rem">
+              <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                <span style="font-size:1.5rem">✅</span>
+                <strong style="color:#0d7055;font-size:1.05rem">Journey Deleted Successfully</strong>
+              </div>
+              <div style="font-size:0.85rem;color:#2c2c2c">
+                <div>Journey ID: <code style="background:#fff;padding:0.2rem 0.4rem;border-radius:4px">${esc(journeyId)}</code></div>
+                <div style="margin-top:0.25rem">Duration: ${result.duration}ms</div>
+              </div>
+              <button class="jcc-btn-secondary" id="jcc-del-export-single" style="margin-top:0.75rem">
+                📥 Download Report
+              </button>
+            </div>
+          `;
+          
+          resultEl.querySelector('#jcc-del-export-single').addEventListener('click', () => {
+            triggerDownload(buildDeletionReport(deletionResults), `journey-deletion-${todayIso()}.csv`);
+          });
+          
+          inputEl.value = '';
+        } catch (e) {
+          result.status = 'Failed';
+          result.errorMessage = parseDeleteError(e, cfg);
+          result.responseCode = e.status || 0;
+          result.duration = Date.now() - startTime;
+          deletionResults.push(result);
+          
+          errEl.style.display = 'flex';
+          errEl.innerHTML = `
+            <div style="flex:1">
+              <div style="font-weight:700;margin-bottom:0.25rem">❌ Deletion Failed</div>
+              <div style="font-size:0.85rem">${esc(result.errorMessage)}</div>
+            </div>
+            <button class="jcc-btn-secondary" id="jcc-del-export-err" style="flex-shrink:0">
+              📥 Export Error
+            </button>
+          `;
+          
+          errEl.querySelector('#jcc-del-export-err').addEventListener('click', () => {
+            triggerDownload(buildDeletionReport(deletionResults), `journey-deletion-error-${todayIso()}.csv`);
+          });
+        } finally {
+          isDeleting = false;
+          submitBtn.disabled = false;
+          submitBtn.textContent = '🗑️ Delete Journey';
+        }
+      });
+      
+    } else {
+      // Bulk delete tab
+      content.innerHTML = `
+        <div class="jcc-idl-form-wrap">
+          <div style="margin-bottom:1rem">
+            <label style="display:block;font-weight:700;margin-bottom:0.5rem;font-size:0.9rem">
+              Upload CSV File
+            </label>
+            <input type="file" id="jcc-del-csv" accept=".csv" 
+              style="display:block;padding:0.5rem;border:1px solid #cacaca;border-radius:4px;width:100%;font-family:inherit" />
+            <div style="font-size:0.75rem;color:#6e6e6e;margin-top:0.25rem">
+              CSV should have "AJO URL" column header, with journey URLs starting from line 2
+            </div>
+          </div>
+          <div id="jcc-bulk-err" class="jcc-idl-err" style="display:none"></div>
+          <div id="jcc-bulk-preview" style="display:none"></div>
+        </div>
+      `;
+      
+      const fileInput = content.querySelector('#jcc-del-csv');
+      const errEl = content.querySelector('#jcc-bulk-err');
+      const previewEl = content.querySelector('#jcc-bulk-preview');
+      
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        errEl.style.display = 'none';
+        previewEl.style.display = 'none';
+        
+        try {
+          const text = await file.text();
+          const lines = text.split(/\r?\n/).filter((l) => l.trim());
+          
+          if (lines.length < 2) {
+            errEl.style.display = 'flex';
+            errEl.textContent = '⚠ CSV file is empty or has no data rows.';
+            return;
+          }
+          
+          // Skip header (line 1), parse from line 2 onwards
+          const journeyIds = [];
+          const errors = [];
+          
+          for (let i = 1; i < lines.length; i += 1) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            const journeyId = extractJourneyId(line);
+            if (journeyId) {
+              journeyIds.push({ row: i + 1, id: journeyId, url: line });
+            } else {
+              errors.push({ row: i + 1, url: line });
+            }
+          }
+          
+          if (journeyIds.length === 0) {
+            errEl.style.display = 'flex';
+            errEl.textContent = '⚠ No valid journey IDs found in CSV.';
+            return;
+          }
+          
+          // Show preview
+          previewEl.style.display = 'block';
+          previewEl.innerHTML = `
+            <div style="background:linear-gradient(135deg,#f0f4ff 0%,#f5f0ff 100%);border:1px solid #c9d8ff;border-radius:8px;padding:1rem;margin-bottom:1rem">
+              <div style="font-weight:700;margin-bottom:0.5rem;font-size:0.95rem">
+                📋 Preview: ${journeyIds.length} journey${journeyIds.length !== 1 ? 's' : ''} found
+              </div>
+              ${errors.length > 0 ? `<div style="font-size:0.82rem;color:#a85900;margin-bottom:0.5rem">⚠ ${errors.length} invalid row${errors.length !== 1 ? 's' : ''} skipped</div>` : ''}
+              <div style="max-height:200px;overflow-y:auto;background:#fff;border:1px solid #e1e1e1;border-radius:4px;padding:0.5rem;font-family:monospace;font-size:0.75rem">
+                ${journeyIds.slice(0, 10).map((j) => `<div style="padding:0.15rem 0">Row ${j.row}: ${esc(j.id)}</div>`).join('')}
+                ${journeyIds.length > 10 ? `<div style="padding:0.15rem 0;color:#6e6e6e">... and ${journeyIds.length - 10} more</div>` : ''}
+              </div>
+            </div>
+            <div style="display:flex;gap:0.5rem">
+              <button class="jcc-btn-primary" id="jcc-bulk-confirm" ${isDeleting ? 'disabled' : ''}>
+                🗑️ Delete ${journeyIds.length} Journey${journeyIds.length !== 1 ? 's' : ''}
+              </button>
+              <button class="jcc-btn-secondary" id="jcc-bulk-cancel">✖ Cancel</button>
+            </div>
+            <div id="jcc-bulk-progress" style="display:none;margin-top:1rem"></div>
+          `;
+          
+          previewEl.querySelector('#jcc-bulk-cancel').addEventListener('click', () => {
+            fileInput.value = '';
+            previewEl.style.display = 'none';
+          });
+          
+          previewEl.querySelector('#jcc-bulk-confirm').addEventListener('click', async () => {
+            if (!confirm(`⚠️ WARNING ⚠️\n\nYou are about to permanently delete ${journeyIds.length} journey${journeyIds.length !== 1 ? 's' : ''}.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure?`)) {
+              return;
+            }
+            
+            isDeleting = true;
+            const confirmBtn = previewEl.querySelector('#jcc-bulk-confirm');
+            const cancelBtn = previewEl.querySelector('#jcc-bulk-cancel');
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            
+            const progressEl = previewEl.querySelector('#jcc-bulk-progress');
+            progressEl.style.display = 'block';
+            progressEl.innerHTML = `
+              <div style="background:#f0f4ff;border:1px solid #c9d8ff;border-radius:8px;padding:1rem">
+                <div style="font-weight:700;margin-bottom:0.5rem">⏳ Deleting journeys...</div>
+                <div style="height:6px;background:#dde5ff;border-radius:3px;overflow:hidden;margin-bottom:0.5rem">
+                  <div id="jcc-bulk-prog-fill" style="height:100%;background:linear-gradient(90deg,#1473e6,#7e5fcf);width:0%;transition:width 0.3s"></div>
+                </div>
+                <div id="jcc-bulk-prog-label" style="font-size:0.85rem;color:#4b4b4b">0 / ${journeyIds.length}</div>
+              </div>
+            `;
+            
+            const progFill = progressEl.querySelector('#jcc-bulk-prog-fill');
+            const progLabel = progressEl.querySelector('#jcc-bulk-prog-label');
+            
+            let done = 0;
+            const results = [];
+            const BATCH_SIZE = 3; // Process 3 at a time
+            
+            for (let i = 0; i < journeyIds.length; i += BATCH_SIZE) {
+              const batch = journeyIds.slice(i, i + BATCH_SIZE);
+              
+              await Promise.all(batch.map(async (j) => {
+                const startTime = Date.now();
+                const result = {
+                  journeyId: j.id,
+                  status: 'Pending',
+                  errorMessage: '',
+                  timestamp: new Date().toISOString(),
+                  responseCode: null,
+                  duration: 0,
+                };
+                
+                try {
+                  const res = await deleteJourney(cfg, j.id);
+                  result.status = 'Success';
+                  result.responseCode = res.status;
+                } catch (e) {
+                  result.status = 'Failed';
+                  result.errorMessage = parseDeleteError(e, cfg);
+                  result.responseCode = e.status || 0;
+                }
+                
+                result.duration = Date.now() - startTime;
+                results.push(result);
+                deletionResults.push(result);
+                done += 1;
+                
+                const pct = Math.round((done / journeyIds.length) * 100);
+                progFill.style.width = `${pct}%`;
+                progLabel.textContent = `${done} / ${journeyIds.length}`;
+              }));
+            }
+            
+            isDeleting = false;
+            const successCount = results.filter((r) => r.status === 'Success').length;
+            const failedCount = results.filter((r) => r.status === 'Failed').length;
+            
+            // Show completion modal
+            showCompletionModal({
+              title: 'Bulk Deletion Complete',
+              subtitle: `Journey Deletion · ${cfg.sandbox}`,
+              stats: [
+                ['🗑️', 'Total Processed', journeyIds.length],
+                ['✅', 'Successfully Deleted', successCount],
+                ['❌', 'Failed', failedCount],
+              ],
+              onExport: () => {
+                triggerDownload(buildDeletionReport(deletionResults), `journey-bulk-deletion-${todayIso()}.csv`);
+              },
+            });
+            
+            // Reset
+            fileInput.value = '';
+            previewEl.style.display = 'none';
+          });
+          
+        } catch (e) {
+          errEl.style.display = 'flex';
+          errEl.textContent = `⚠ Error reading CSV: ${e.message}`;
+        }
+      });
+    }
+    
+    // Wire tab switchers
+    wrap.querySelector('#jcc-del-tab-single')?.addEventListener('click', () => {
+      if (isDeleting) return;
+      activeTab = 'single';
+      renderScreen();
+    });
+    
+    wrap.querySelector('#jcc-del-tab-bulk')?.addEventListener('click', () => {
+      if (isDeleting) return;
+      activeTab = 'bulk';
+      renderScreen();
+    });
+    
+    wrap.querySelector('#jcc-del-back')?.addEventListener('click', () => {
+      if (isDeleting && !confirm('Deletion in progress. Are you sure you want to go back?')) return;
+      showModeSelect(root, cfg);
+    });
+  }
+  
+  root.appendChild(wrap);
+  renderScreen();
 }
 
 function readCfg(block) {
