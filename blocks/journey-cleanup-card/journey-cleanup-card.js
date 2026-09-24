@@ -912,6 +912,9 @@ function showDeleteJourney(root, cfg) {
           <h2 class="jcc-idl-title">Delete Journey</h2>
           <p class="jcc-idl-sub">Sandbox: <strong>${esc(cfg.sandbox)}</strong></p>
         </div>
+        <button class="jcc-btn-secondary" id="jcc-del-download-report" style="margin-left:auto;display:${deletionResults.length > 0 ? 'inline-flex' : 'none'}">
+          📥 Download Report (${deletionResults.length})
+        </button>
       </div>
       
       <!-- Tab switcher -->
@@ -1229,6 +1232,13 @@ function showDeleteJourney(root, cfg) {
         }
       });
     }
+    
+    // Wire permanent download button
+    wrap.querySelector('#jcc-del-download-report')?.addEventListener('click', () => {
+      if (deletionResults.length > 0) {
+        triggerDownload(buildDeletionReport(deletionResults), `journey-deletion-report-${todayIso()}.csv`);
+      }
+    });
     
     // Wire tab switchers
     wrap.querySelector('#jcc-del-tab-single')?.addEventListener('click', () => {
