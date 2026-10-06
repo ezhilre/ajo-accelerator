@@ -221,7 +221,7 @@ async function verifyCredentials(c) {
 
 // ─── Completion modal ────────────────────────────────────────────────────────
 
-function showCompletionModal({ title, subtitle, stats, onExport }) {
+function showCompletionModal({ title, subtitle, stats, onExport, onClose }) {
   document.querySelector('.jcc-done-overlay')?.remove();
 
   const overlay = document.createElement('div');
@@ -260,6 +260,7 @@ function showCompletionModal({ title, subtitle, stats, onExport }) {
   function dismiss() {
     clearInterval(timer);
     overlay.remove();
+    if (onClose) onClose();
   }
 
   overlay.querySelector('#jcc-done-close').addEventListener('click', dismiss);
@@ -1221,9 +1222,10 @@ function showDeleteJourney(root, cfg) {
               },
             });
             
-            // Reset
+            // Reset and refresh screen to show updated download button
             fileInput.value = '';
             previewEl.style.display = 'none';
+            renderScreen();
           });
           
         } catch (e) {
