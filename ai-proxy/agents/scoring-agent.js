@@ -12,7 +12,7 @@
 
 'use strict';
 
-const { callOllama, extractJson }       = require('../lib/queue');
+const { callLLM, extractJson }       = require('../lib/queue');
 const { buildAudienceDefinitionsBlock } = require('./audience-agent');
 const {
   extractNodes, extractChannelSummary, extractAudienceNames,
@@ -249,7 +249,7 @@ async function scoreJourney(journey, resolvedAudiences, retryCount = 0) {
     id, name: (journey.name || '').slice(0, 40), status: journey.status,
   });
 
-  const { text: rawText, promptTokens, completionTokens } = await callOllama(prompt, id);
+  const { text: rawText, promptTokens, completionTokens } = await callLLM(prompt, id);
   const parsed = extractJson(rawText, id);
 
   if (!parsed) {

@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { callOllama }                  = require('../lib/queue');
+const { callLLM }                  = require('../lib/queue');
 const { normalizeAudienceExpression } = require('../lib/expression-parser');
 const { log }                         = require('../lib/logger');
 
@@ -87,7 +87,7 @@ Requirements:
 Plain English description:`;
 
   try {
-    const { text } = await callOllama(prompt, audienceId);
+    const { text } = await callLLM(prompt, audienceId);
     const plainEnglish = text.trim()
       .replace(/^(plain english description:|description:|answer:)\s*/i, '')
       .trim();

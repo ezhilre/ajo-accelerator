@@ -1,0 +1,39 @@
+application:
+  actions: actions
+  web: web-src
+  runtimeManifest:
+    packages:
+      ajo-delivery-hub:
+        license: Apache-2.0
+        actions:
+          delivery-hub-action:
+            function: actions/delivery-hub-action/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              apiKey: $SERVICE_API_KEY
+            annotations:
+              require-adobe-auth: true
+              final: true
+          generic:
+            function: actions/generic/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+            annotations:
+              require-adobe-auth: true
+              final: true
+          fetch-delivery-report:
+            function: actions/fetch-delivery-report/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 300000
+              memory: 512

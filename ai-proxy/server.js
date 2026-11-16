@@ -28,8 +28,8 @@ const path    = require('path');
 const { log, writeLlmFile, LOG_LEVEL, LOG_LEVELS }   = require('./lib/logger');
 const {
   acquireSlot, releaseSlot, tokenStats, resetTokenStats,
-  checkOllamaAvailability, getOllamaStatus, MODEL, LLM_CONCURRENCY,
-  OLLAMA_BASE,
+  checkProviderAvailability, getProviderStatus, MODEL, LLM_CONCURRENCY,
+  OLLAMA_BASE, LLM_PROVIDER, AZURE_OPENAI_DEPLOYMENT,
 } = require('./lib/queue');
 const { resolveJourneyAudiences }  = require('./agents/audience-agent');
 const { journeyGraph }             = require('./graph/journey-graph');
@@ -111,26 +111,41 @@ app.use(requestLogger);
 // ── GET /health ───────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
   const start = Date.now();
-  await checkOllamaAvailability();
-  const { online, lastChecked } = getOllamaStatus();
+  await checkProviderAvailability();
+  const { online, lastChecked, provider, base, model } = getProviderStatus();
   const ms = Date.now() - start;
 
   if (online) {
-    try {
-      const r    = await fetch(`${OLLAMA_BASE}/api/tags`);
-      const data = await r.json();
-      const models = (data.models || []).map((m) => m.name);
-      log('info', '🩺 Health check', { ollama: 'connected', model: MODEL, ms: `${ms}ms` });
-      return res.json({
-        status: 'ok', model: MODEL, ollama: 'connected',
-        availableModels: models, lastChecked,
-        adobeCredentials: !!(ADOBE_TOKEN && ADOBE_API_KEY && ADOBE_ORG_ID),
-      });
-    } catch (_) { /* fall through */ }
+    const response = {
+      status: 'ok',
+      provider: provider,
+      model: model,
+      backend: base,
+      lastChecked,
+      adobeCredentials: !!(ADOBE_TOKEN && ADOBE_API_KEY && ADOBE_ORG_ID),
+    };
+
+    // For Ollama, try to get available models list
+    if (provider === 'ollama') {
+      try {
+        const r    = await fetch(`${OLLAMA_BASE}/api/tags`);
+        const data = await r.json();
+        response.availableModels = (data.models || []).map((m) => m.name);
+      } catch (_) { /* ignore - not critical */ }
+    }
+
+    log('info', '🩺 Health check', { provider, status: 'connected', model, ms: `${ms}ms` });
+    return res.json(response);
   }
 
-  log('error', '🩺 Health check — Ollama unreachable', { ms: `${ms}ms` });
-  res.status(503).json({ status: 'error', model: MODEL, ollama: 'unreachable', lastChecked });
+  log('error', '🩺 Health check — provider unreachable', { provider, ms: `${ms}ms` });
+  res.status(503).json({ 
+    status: 'error', 
+    provider: provider,
+    model: model, 
+    backend: 'unreachable', 
+    lastChecked 
+  });
 });
 
 // ── POST /audience/resolve ────────────────────────────────────────────────────
@@ -167,11 +182,13 @@ app.post('/audience/resolve', async (req, res) => {
 // Input:  { journey: {...}, cfg? }
 // Output: { journeyId, retirementScore, retirementLabel, ..., _audiences }
 app.post('/score', async (req, res) => {
-  const { online, lastChecked } = getOllamaStatus();
+  const { online, lastChecked, provider } = getProviderStatus();
   if (!online) {
     return res.status(503).json({
-      error: 'AI backend (Ollama) is currently offline. Please start Ollama and try again.',
-      ollama: 'unreachable', lastChecked,
+      error: `AI backend (${provider}) is currently offline. Please check your configuration and try again.`,
+      provider: provider,
+      backend: 'unreachable', 
+      lastChecked,
     });
   }
 
@@ -261,11 +278,13 @@ app.post('/score', async (req, res) => {
 // Input:  { journeys: [...], cfg? }
 // Output: { results: [...] }
 app.post('/score/batch', async (req, res) => {
-  const { online, lastChecked } = getOllamaStatus();
+  const { online, lastChecked, provider } = getProviderStatus();
   if (!online) {
     return res.status(503).json({
-      error: 'AI backend (Ollama) is currently offline.',
-      ollama: 'unreachable', lastChecked,
+      error: `AI backend (${provider}) is currently offline.`,
+      provider: provider,
+      backend: 'unreachable',
+      lastChecked,
     });
   }
 
@@ -385,7 +404,14 @@ const server = app.listen(PORT, () => {
   console.log('\x1b[1m\x1b[35m🤖  AJO AI Proxy  started\x1b[0m');
   console.log('-'.repeat(48));
   log('info', 'Server listening',  { port: PORT, url: `http://localhost:${PORT}` });
-  log('info', 'Ollama backend',    { url: OLLAMA_BASE, model: MODEL });
+  
+  if (LLM_PROVIDER === 'azure') {
+    log('info', 'LLM Provider',    { provider: 'Azure OpenAI ☁️', deployment: AZURE_OPENAI_DEPLOYMENT });
+    log('info', 'Azure endpoint',  { url: process.env.AZURE_OPENAI_ENDPOINT || '(not set)' });
+  } else {
+    log('info', 'LLM Provider',    { provider: 'Ollama 🦙', url: OLLAMA_BASE, model: MODEL });
+  }
+  
   log('info', 'Queue settings',    { concurrency: LLM_CONCURRENCY, llm_timeout_ms: parseInt(process.env.REQUEST_TIMEOUT_MS || '300000', 10), server_timeout_ms: SERVER_TIMEOUT_MS });
   log('info', 'Adobe credentials', {
     token:    ADOBE_TOKEN    ? '✓ set' : '✗ missing',

@@ -1,11 +1,15 @@
 # AJO AI Proxy
 
-Local Node.js proxy that bridges the EDS Journey Cleanup Dashboard to Ollama (phase 1) or any cloud LLM (phase 2).
+Local Node.js proxy that bridges the EDS Journey Cleanup Dashboard to LLM providers: **Ollama (local)** or **Azure OpenAI (cloud)**.
+
+> **✨ New:** Multi-provider support! Switch between local Ollama and Azure OpenAI with a simple configuration change. See [LLM_PROVIDER_CONFIG.md](./LLM_PROVIDER_CONFIG.md) for details.
 
 ## Prerequisites
 
 1. **Node.js 18+** — already installed
-2. **Ollama** — [install from ollama.ai](https://ollama.ai)
+2. **LLM Provider** — choose one:
+   - **Ollama (local)** — [install from ollama.ai](https://ollama.ai)
+   - **Azure OpenAI (cloud)** — requires Azure subscription with OpenAI service
 
 ## Setup (one-time)
 
@@ -42,30 +46,54 @@ cd ..
 aem up
 ```
 
-## Configuration (environment variables)
+## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3001` | Port to listen on |
-| `OLLAMA_BASE` | `http://localhost:11434` | Ollama base URL |
-| `MODEL` | `llama3` | Model name to use |
-| `CONCURRENCY` | `1` | Max parallel LLM calls (keep at 1 for Ollama) |
-
-Example:
+Create a `.env` file from the example:
 ```bash
-MODEL=phi3 PORT=3001 node server.js
+cp .env.example .env
 ```
+
+Then set your LLM provider:
+
+### Option 1: Local Ollama (Default)
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE=http://localhost:11434
+MODEL=llama3
+```
+
+### Option 2: Azure OpenAI
+```env
+LLM_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=your-api-key
+AZURE_OPENAI_DEPLOYMENT=gpt-4-deployment-name
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+```
+
+📖 **For complete configuration guide**, see [LLM_PROVIDER_CONFIG.md](./LLM_PROVIDER_CONFIG.md)
 
 ## API Endpoints
 
 ### `GET /health`
-Check if proxy and Ollama are running.
+Check if proxy and LLM provider are running.
 ```json
 {
   "status": "ok",
+  "provider": "ollama",
   "model": "llama3",
-  "ollama": "connected",
+  "backend": "http://localhost:11434",
   "availableModels": ["llama3:latest", "phi3:latest"]
+}
+```
+
+Or with Azure:
+```json
+{
+  "status": "ok",
+  "provider": "azure",
+  "model": "gpt-4-deployment-name",
+  "backend": "https://your-resource.openai.azure.com"
 }
 ```
 
@@ -83,42 +111,37 @@ Request:  { "journeys": [...array of journey objects] }
 Response: { "results": [...score objects] }
 ```
 
-## Phase 2 — Switching to a Cloud Model
+## Switching Between Providers
 
-Change 2 lines in `server.js`:
+No code changes needed! Just update your `.env` file:
 
-```javascript
-// Replace callOllama() with your cloud provider:
+1. Stop the server (Ctrl+C)
+2. Edit `.env` and change `LLM_PROVIDER=azure` or `LLM_PROVIDER=ollama`
+3. Restart: `node server.js`
 
-// Claude (Anthropic)
-const Anthropic = require('@anthropic-ai/sdk');
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-async function callLLM(prompt) {
-  const msg = await client.messages.create({
-    model: 'claude-3-haiku-20240307',
-    max_tokens: 512,
-    messages: [{ role: 'user', content: prompt }],
-  });
-  return msg.content[0].text;
-}
+The proxy automatically routes requests to the configured provider.
 
-// OpenAI
-const OpenAI = require('openai');
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-async function callLLM(prompt) {
-  const res = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-  });
-  return res.choices[0].message.content;
-}
+## Architecture
+
+```
+Frontend (Browser)
+    ↓
+AI Proxy Server (localhost:3001)
+    ↓
+    ├── Ollama (http://localhost:11434)
+    └── Azure OpenAI (https://your-resource.openai.azure.com)
 ```
 
-Then deploy `server.js` to AWS Lambda / Cloud Run / Render and update the proxy URL in the dashboard settings.
+The proxy runs locally regardless of which LLM provider you choose, keeping:
+- API keys secure (server-side only)
+- CORS handling consistent  
+- Frontend code unchanged
 
-## Deploying to AWS Lambda (Phase 2)
+## Troubleshooting
 
-```bash
-# Using AWS SAM or serverless framework
-# The server.js logic can be wrapped in a Lambda handler in ~10 lines
-# See: https://github.com/vendia/serverless-express
+See [LLM_PROVIDER_CONFIG.md](./LLM_PROVIDER_CONFIG.md) for detailed troubleshooting steps.
+
+**Quick checks:**
+- Ollama: Is `ollama serve` running? Try `ollama list` to see available models
+- Azure: Check your endpoint URL and API key in Azure Portal
+- Both: Check server logs for detailed error messages
