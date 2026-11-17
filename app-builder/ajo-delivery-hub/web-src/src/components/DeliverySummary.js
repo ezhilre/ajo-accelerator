@@ -15,11 +15,17 @@ import {
   TextField,
   Well,
   Heading,
-  ActionButton
+  ActionButton,
+  Dialog,
+  DialogTrigger,
+  Content,
+  Divider,
+  ButtonGroup
 } from '@adobe/react-spectrum';
 import Download from '@spectrum-icons/workflow/Download';
 import Refresh from '@spectrum-icons/workflow/Refresh';
 import Search from '@spectrum-icons/workflow/Search';
+import Info from '@spectrum-icons/workflow/Info';
 import { downloadCsv, exportDeliverySummaryCsv } from '../services/csvExport';
 import actionWebInvoke from '../utils/actions';
 
@@ -57,9 +63,11 @@ const getJourneyTypeColor = (type) => {
 const DeliverySummary = ({ credentials }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
   const [selectedType, setSelectedType] = useState('campaign'); // 'campaign' | 'journey'
+  const [selectedSandbox, setSelectedSandbox] = useState('xlg-dev'); // Default sandbox
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  const [tenantId, setTenantId] = useState(null); // Retrieved from backend
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
@@ -95,14 +103,18 @@ const DeliverySummary = ({ credentials }) => {
       
       console.log(`Calling fetch-delivery-report action: ${year}-${month}, type: ${selectedType}`);
       
+      // DEBUG: Print full IMS token for testing
+      console.log('=== FULL IMS TOKEN FROM REACT (FOR DEBUG ONLY) ===');
+      console.log(credentials.token);
+      console.log('Token length:', credentials.token?.length);
+      console.log('=== END IMS TOKEN ===');
+      
       // Call the server-side action
       const response = await actionWebInvoke({
         actionName: 'fetch-delivery-report',
+        imsToken: credentials.token,
         params: {
-          token: credentials.token,
-          apiKey: credentials.apiKey,
-          orgId: credentials.orgId,
-          sandbox: credentials.sandbox,
+          sandbox: selectedSandbox,
           year: year.toString(),
           month: month.toString(),
           type: selectedType,
@@ -117,6 +129,11 @@ const DeliverySummary = ({ credentials }) => {
 
       // The action returns the data structure directly
       setData(response);
+      
+      // Store tenantId from backend response
+      if (response.tenantId) {
+        setTenantId(response.tenantId);
+      }
       
     } catch (err) {
       console.error('Failed to fetch delivery data:', err);
@@ -147,12 +164,12 @@ const DeliverySummary = ({ credentials }) => {
   };
 
   const getItemUrl = (item) => {
-    if (!credentials) return '#';
+    if (!tenantId) return '#';
     
     if (item._type === 'journey') {
-      return `https://experience.adobe.com/#/@${credentials.tenantId}/sname:${encodeURIComponent(credentials.sandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(item.campaignId)}`;
+      return `https://experience.adobe.com/#/@${tenantId}/sname:${encodeURIComponent(selectedSandbox)}/journey-optimizer/journeys/journey/${encodeURIComponent(item.campaignId)}`;
     } else {
-      return `https://experience.adobe.com/#/@${credentials.tenantId}/sname:${encodeURIComponent(credentials.sandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(item.versionId || item.campaignId)}`;
+      return `https://experience.adobe.com/#/@${tenantId}/sname:${encodeURIComponent(selectedSandbox)}/journey-optimizer/campaigns/review/${encodeURIComponent(item.versionId || item.campaignId)}`;
     }
   };
 
@@ -262,6 +279,18 @@ const DeliverySummary = ({ credentials }) => {
           <Item key="campaign">Campaign</Item>
           <Item key="journey">Journey</Item>
           <Item key="both">Both</Item>
+        </Picker>
+
+        {/* Sandbox Selector */}
+        <Picker
+          label="Sandbox"
+          selectedKey={selectedSandbox}
+          onSelectionChange={setSelectedSandbox}
+          width="size-1600"
+        >
+          <Item key="xlg-dev">xlg-dev</Item>
+          <Item key="xlg-stage">xlg-stage</Item>
+          <Item key="xlg-prod">xlg-prod</Item>
         </Picker>
 
         {/* Fetch Button */}
@@ -414,19 +443,136 @@ const DeliverySummary = ({ credentials }) => {
                   </td>
                   <td style={{ padding: '12px 8px', fontSize: '13px', maxWidth: '300px' }}>
                     {item.aiSummary?.useCaseSummary ? (
-                      <span 
-                        title={`${item.aiSummary.useCaseSummary}\n\nTarget: ${item.aiSummary.targetAudience || 'Unknown'}\nBusiness Value: ${item.aiSummary.businessValue || 'Unknown'}`}
-                        style={{ 
-                          display: 'block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          color: '#323232',
-                          cursor: 'help'
-                        }}
-                      >
-                        🤖 {item.aiSummary.useCaseSummary}
-                      </span>
+                      <Flex direction="row" gap="size-100" alignItems="center">
+                        <span 
+                          style={{ 
+                            display: 'block',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            color: '#323232',
+                            flex: 1
+                          }}
+                        >
+                          🤖 {item.aiSummary.useCaseSummary}
+                        </span>
+                        <DialogTrigger>
+                          <ActionButton isQuiet aria-label="View AI Summary Details">
+                            <Info />
+                          </ActionButton>
+                          {(close) => (
+                            <Dialog>
+                              <Heading>AI Summary: {item.name}</Heading>
+                              <Divider />
+                              <Content>
+                                <View padding="size-200">
+                                  <Flex direction="column" gap="size-200">
+                                    {item.aiSummary.journeyType && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Journey Type:
+                                        </Text>
+                                        <Text>{getJourneyTypeIcon(item.aiSummary.journeyType)} {item.aiSummary.journeyType}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.lifecycleStage && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Lifecycle Stage:
+                                        </Text>
+                                        <Text>{item.aiSummary.lifecycleStage}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.useCaseSummary && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Use Case Summary:
+                                        </Text>
+                                        <Text>{item.aiSummary.useCaseSummary}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.targetAudience && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Target Audience:
+                                        </Text>
+                                        <Text>{item.aiSummary.targetAudience}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.customerExperience && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Customer Experience:
+                                        </Text>
+                                        <Text>{item.aiSummary.customerExperience}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.behaviorTargeted && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Behavior Targeted:
+                                        </Text>
+                                        <Text>{item.aiSummary.behaviorTargeted}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.businessObjective && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Business Objective:
+                                        </Text>
+                                        <Text>{item.aiSummary.businessObjective}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.whyTeamBuiltThis && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Why Team Built This:
+                                        </Text>
+                                        <Text>{item.aiSummary.whyTeamBuiltThis}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.businessValue && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Business Value:
+                                        </Text>
+                                        <Text>{item.aiSummary.businessValue}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.reasoning && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          AI Reasoning:
+                                        </Text>
+                                        <Text>{item.aiSummary.reasoning}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.recommendation && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Recommendation:
+                                        </Text>
+                                        <Text>{item.aiSummary.recommendation}</Text>
+                                      </View>
+                                    )}
+                                    {item.aiSummary.confidence && (
+                                      <View>
+                                        <Text UNSAFE_style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                                          Confidence:
+                                        </Text>
+                                        <Text>{item.aiSummary.confidence}%</Text>
+                                      </View>
+                                    )}
+                                  </Flex>
+                                </View>
+                              </Content>
+                              <ButtonGroup>
+                                <Button variant="primary" onPress={close}>Close</Button>
+                              </ButtonGroup>
+                            </Dialog>
+                          )}
+                        </DialogTrigger>
+                      </Flex>
                     ) : (
                       <span style={{ color: '#999', fontStyle: 'italic' }}>No AI summary</span>
                     )}

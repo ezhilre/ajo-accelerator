@@ -112,7 +112,7 @@ export function exportJourneysCsv(journeys, config, aiScores = null) {
 /**
  * Export delivery summary to CSV
  */
-export function exportDeliverySummaryCsv(items, config, aiScores = null) {
+export function exportDeliverySummaryCsv(items, config) {
   const headers = [
     'Name',
     'URL',
@@ -130,9 +130,13 @@ export function exportDeliverySummaryCsv(items, config, aiScores = null) {
     'AI Use Case Summary',
     'AI Target Audience',
     'AI Customer Experience',
+    'AI Behavior Targeted',
     'AI Business Objective',
     'AI Business Value',
-    'AI Recommendation'
+    'AI Why Team Built This',
+    'AI Reasoning',
+    'AI Recommendation',
+    'AI Confidence'
   ];
 
   const rows = items.map(item => {
@@ -154,25 +158,9 @@ export function exportDeliverySummaryCsv(items, config, aiScores = null) {
 
     const type = item._type === 'journey' ? 'Journey' : 'Campaign';
 
-    // AI fields (only for journeys with successful LLM scores)
-    let aiJourneyType = '', aiLifecycle = '', aiSummary = '', aiAudience = '';
-    let aiCx = '', aiObjective = '', aiBizValue = '', aiRec = '';
+    // AI fields from aiSummary attached to item
+    const ai = item.aiSummary || {};
     
-    if (item._type === 'journey' && aiScores) {
-      const aiEntry = aiScores.get(item.campaignId);
-      if (aiEntry && aiEntry.llm && !aiEntry.llm.error) {
-        const l = aiEntry.llm;
-        aiJourneyType = l.journeyType || '';
-        aiLifecycle = l.lifecycleStage || '';
-        aiSummary = l.useCaseSummary || '';
-        aiAudience = l.targetAudience || '';
-        aiCx = l.customerExperience || '';
-        aiObjective = l.businessObjective || '';
-        aiBizValue = l.businessValue || '';
-        aiRec = l.recommendation || l.retirementLabel || '';
-      }
-    }
-
     return [
       item.name || '',
       itemUrl,
@@ -185,14 +173,18 @@ export function exportDeliverySummaryCsv(items, config, aiScores = null) {
       item.createdByName || item.createdBy || '',
       pubDate,
       modDate,
-      aiJourneyType,
-      aiLifecycle,
-      aiSummary,
-      aiAudience,
-      aiCx,
-      aiObjective,
-      aiBizValue,
-      aiRec
+      ai.journeyType || '',
+      ai.lifecycleStage || '',
+      ai.useCaseSummary || '',
+      ai.targetAudience || '',
+      ai.customerExperience || '',
+      ai.behaviorTargeted || '',
+      ai.businessObjective || '',
+      ai.businessValue || '',
+      ai.whyTeamBuiltThis || '',
+      ai.reasoning || '',
+      ai.recommendation || '',
+      ai.confidence || ''
     ].map(escapeCSV).join(',');
   });
 

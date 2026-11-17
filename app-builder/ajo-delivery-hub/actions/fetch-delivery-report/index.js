@@ -13,6 +13,16 @@ const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY;
 const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
+const AZURE_OPENAI_MAX_TOKENS = parseInt(process.env.AZURE_OPENAI_MAX_TOKENS || '4000');
+
+// Adobe AJO configuration (from environment)
+const ADOBE_ORG_ID = process.env.ADOBE_ORG_ID;
+const ADOBE_TENANT_ID = process.env.ADOBE_TENANT_ID;
+
+// Sandbox-specific API Keys
+const ADOBE_API_KEY_XLG_DEV = process.env.ADOBE_API_KEY_XLG_DEV;
+const ADOBE_API_KEY_XLG_STAGE = process.env.ADOBE_API_KEY_XLG_STAGE;
+const ADOBE_API_KEY_XLG_PROD = process.env.ADOBE_API_KEY_XLG_PROD;
 
 // AJO API endpoints
 const CAMPAIGN_GQL_URL = 'https://exc-unifiedcontent.experience.adobe.net/api/gql/app/ajoCampaignsApp/graphql?appId=ajoCampaignsApp';
@@ -169,27 +179,55 @@ async function fetchJourneys(credentials, startMs, endMs, logger) {
 }
 
 /**
+ * Get the appropriate API key for the given sandbox
+ */
+function getApiKeyForSandbox(sandbox) {
+  const apiKeys = {
+    'xlg-dev': ADOBE_API_KEY_XLG_DEV,
+    'xlg-stage': ADOBE_API_KEY_XLG_STAGE,
+    'xlg-prod': ADOBE_API_KEY_XLG_PROD,
+  };
+  return apiKeys[sandbox];
+}
+
+/**
  * Fetch journey detail to extract channels from campaign nodes
  */
 async function fetchJourneyDetail(credentials, journeyId, logger) {
   const url = `${JOURNEY_DETAIL_URL}/${journeyId}`;
   
+  // Get sandbox-specific API key
+  const apiKey = getApiKeyForSandbox(credentials.sandbox);
+  
+  if (!apiKey) {
+    logger.error(`Adobe API Key not configured for sandbox: ${credentials.sandbox}`);
+    return null;
+  }
+  
+  logger.info(`Fetching journey detail for ${journeyId}`);
+  logger.info(`Using API Key for ${credentials.sandbox}: ${apiKey.substring(0, 8)}...`);
+  logger.info(`Org ID: ${credentials.orgId}`);
+  
   const res = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${credentials.token}`,
-      'x-api-key': credentials.apiKey,
+      'x-api-key': apiKey,
       'x-gw-ims-org-id': credentials.orgId,
       'x-sandbox-name': credentials.sandbox,
     },
   });
 
   if (!res.ok) {
+    const errorText = await res.text();
+    logger.warn(`Journey detail fetch failed for ${journeyId}: HTTP ${res.status} - ${errorText.slice(0, 200)}`);
     // Don't throw on 404 - journey might be deleted
     if (res.status === 404) return null;
-    throw new Error(`Journey detail fetch failed: HTTP ${res.status}`);
+    return null; // Return null on other errors too, don't break the flow
   }
 
-  return res.json();
+  const data = await res.json();
+  logger.info(`Successfully fetched journey detail for ${journeyId}`);
+  return data;
 }
 
 /**
@@ -320,30 +358,40 @@ async function generateAISummary(item, logger) {
   const prompt = buildScoringPrompt(item);
   
   try {
+    const requestBody = {
+      messages: prompt,
+      max_completion_tokens: AZURE_OPENAI_MAX_TOKENS,
+      response_format: { type: 'json_object' },
+    };
+    
+    logger.info(`Generating AI summary for: ${item.name}`);
+    logger.info(`Azure OpenAI URL: ${url}`);
+    logger.info(`API Key present: ${!!AZURE_OPENAI_API_KEY}`);
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'api-key': AZURE_OPENAI_API_KEY,
       },
-      body: JSON.stringify({
-        messages: prompt,
-        temperature: 0.3,
-        max_tokens: 1500,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
-      logger.warn(`AI summary failed for ${item.name}: HTTP ${response.status}`);
+      const errorText = await response.text();
+      logger.error(`AI summary failed for ${item.name}:`);
+      logger.error(`HTTP Status: ${response.status}`);
+      logger.error(`Error response: ${errorText.slice(0, 500)}`);
       return null;
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
+    logger.info(`Successfully generated AI summary for ${item.name}`);
     return JSON.parse(content);
   } catch (error) {
-    logger.warn(`AI summary error for ${item.name}:`, error.message);
+    logger.error(`AI summary exception for ${item.name}:`, error.message);
+    logger.error(`Error stack:`, error.stack);
     return null;
   }
 }
@@ -412,17 +460,38 @@ async function main(params) {
   try {
     logger.info('Fetch Delivery Report action invoked');
 
+    // Extract IMS token from Authorization header
+    // OpenWhisk normalizes headers to lowercase
+    const headers = params.__ow_headers || {};
+    logger.info('Available headers:', Object.keys(headers));
+    
+    const authHeader = headers.authorization || headers.Authorization || '';
+    logger.info('Auth header present:', !!authHeader);
+    
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    
+    if (!token) {
+      logger.error('No token found in headers');
+      return errorResponse(401, 'Missing authorization token in request headers', logger);
+    }
+    
+    logger.info('Token extracted successfully, length:', token.length);
+
+    // Validate environment variables
+    if (!ADOBE_ORG_ID || !ADOBE_TENANT_ID) {
+      return errorResponse(500, 'Adobe configuration missing in environment variables', logger);
+    }
+
     // Validate required parameters
-    const requiredParams = ['token', 'apiKey', 'orgId', 'sandbox', 'year', 'month', 'type'];
+    const requiredParams = ['sandbox', 'year', 'month', 'type'];
     const errorMessage = checkMissingRequestInputs(params, requiredParams, []);
     if (errorMessage) {
       return errorResponse(400, errorMessage, logger);
     }
 
     const credentials = {
-      token: params.token,
-      apiKey: params.apiKey,
-      orgId: params.orgId,
+      token: token,
+      orgId: ADOBE_ORG_ID,
       sandbox: params.sandbox,
     };
 
@@ -533,6 +602,7 @@ async function main(params) {
         journeys,
         combined,
         aiSummaries, // Separate for backward compatibility
+        tenantId: ADOBE_TENANT_ID, // Include tenantId for frontend URL generation
         stats: {
           totalCampaigns: campaigns.length,
           totalJourneys: journeys.length,
