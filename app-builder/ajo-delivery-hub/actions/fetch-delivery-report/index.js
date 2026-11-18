@@ -5,24 +5,9 @@
  */
 
 const fetch = require('node-fetch');
-const { Core } = require('@adobe/aio-sdk');
+const { Core, State, Files } = require('@adobe/aio-sdk');
 const { errorResponse, checkMissingRequestInputs } = require('../utils');
 
-// Azure OpenAI configuration (from environment)
-const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
-const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY;
-const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
-const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
-const AZURE_OPENAI_MAX_TOKENS = parseInt(process.env.AZURE_OPENAI_MAX_TOKENS || '4000');
-
-// Adobe AJO configuration (from environment)
-const ADOBE_ORG_ID = process.env.ADOBE_ORG_ID;
-const ADOBE_TENANT_ID = process.env.ADOBE_TENANT_ID;
-
-// Sandbox-specific API Keys
-const ADOBE_API_KEY_XLG_DEV = process.env.ADOBE_API_KEY_XLG_DEV;
-const ADOBE_API_KEY_XLG_STAGE = process.env.ADOBE_API_KEY_XLG_STAGE;
-const ADOBE_API_KEY_XLG_PROD = process.env.ADOBE_API_KEY_XLG_PROD;
 
 // AJO API endpoints
 const CAMPAIGN_GQL_URL = 'https://exc-unifiedcontent.experience.adobe.net/api/gql/app/ajoCampaignsApp/graphql?appId=ajoCampaignsApp';
@@ -179,25 +164,18 @@ async function fetchJourneys(credentials, startMs, endMs, logger) {
 }
 
 /**
- * Get the appropriate API key for the given sandbox
- */
-function getApiKeyForSandbox(sandbox) {
-  const apiKeys = {
-    'xlg-dev': ADOBE_API_KEY_XLG_DEV,
-    'xlg-stage': ADOBE_API_KEY_XLG_STAGE,
-    'xlg-prod': ADOBE_API_KEY_XLG_PROD,
-  };
-  return apiKeys[sandbox];
-}
-
-/**
  * Fetch journey detail to extract channels from campaign nodes
  */
-async function fetchJourneyDetail(credentials, journeyId, logger) {
+async function fetchJourneyDetail(credentials, journeyId, apiKeys, logger) {
   const url = `${JOURNEY_DETAIL_URL}/${journeyId}`;
   
   // Get sandbox-specific API key
-  const apiKey = getApiKeyForSandbox(credentials.sandbox);
+  const sandboxApiKeys = {
+    'xlg-dev': apiKeys.dev,
+    'xlg-stage': apiKeys.stage,
+    'xlg-prod': apiKeys.prod,
+  };
+  const apiKey = sandboxApiKeys[credentials.sandbox];
   
   if (!apiKey) {
     logger.error(`Adobe API Key not configured for sandbox: ${credentials.sandbox}`);
@@ -347,32 +325,32 @@ function processJourneys(journeyResp, logger) {
 /**
  * Generate AI summary using Azure OpenAI (EDS-style prompt)
  */
-async function generateAISummary(item, logger) {
-  if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
+async function generateAISummary(item, azureConfig, logger) {
+  if (!azureConfig.endpoint || !azureConfig.apiKey) {
     logger.warn('Azure OpenAI not configured - skipping AI summary');
     return null;
   }
 
-  const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+  const url = `${azureConfig.endpoint}/openai/deployments/${azureConfig.deployment}/chat/completions?api-version=${azureConfig.apiVersion}`;
   
   const prompt = buildScoringPrompt(item);
   
   try {
     const requestBody = {
       messages: prompt,
-      max_completion_tokens: AZURE_OPENAI_MAX_TOKENS,
+      max_completion_tokens: azureConfig.maxTokens,
       response_format: { type: 'json_object' },
     };
     
     logger.info(`Generating AI summary for: ${item.name}`);
     logger.info(`Azure OpenAI URL: ${url}`);
-    logger.info(`API Key present: ${!!AZURE_OPENAI_API_KEY}`);
+    logger.info(`API Key present: ${!!azureConfig.apiKey}`);
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': AZURE_OPENAI_API_KEY,
+        'api-key': azureConfig.apiKey,
       },
       body: JSON.stringify(requestBody),
     });
@@ -393,6 +371,66 @@ async function generateAISummary(item, logger) {
     logger.error(`AI summary exception for ${item.name}:`, error.message);
     logger.error(`Error stack:`, error.stack);
     return null;
+  }
+}
+
+/**
+ * Update job progress in State
+ */
+async function updateProgress(jobId, status, stage, progress, message, itemsProcessed, itemsTotal, logger) {
+  if (!jobId) return; // Skip if no jobId (legacy sync mode)
+  
+  try {
+    const state = await State.init();
+    const jobStatus = {
+      jobId,
+      status,
+      stage,
+      progress,
+      itemsProcessed,
+      itemsTotal,
+      message,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // State requires string values
+    await state.put(jobId, JSON.stringify(jobStatus), { ttl: 3600 });
+    logger.info(`Progress updated: ${stage} - ${progress}% - ${message}`);
+  } catch (error) {
+    logger.warn(`Failed to update progress: ${error.message}`);
+  }
+}
+
+/**
+ * Cache report in State storage (30 day TTL)
+ */
+async function cacheReport(cacheKey, reportData, logger) {
+  try {
+    const state = await State.init();
+    
+    const cacheData = {
+      cacheKey,
+      cachedAt: new Date().toISOString(),
+      params: reportData.params,
+      stats: reportData.stats,
+      report: {
+        campaigns: reportData.campaigns,
+        journeys: reportData.journeys,
+        combined: reportData.combined,
+        aiSummaries: reportData.aiSummaries,
+        tenantId: reportData.tenantId,
+        stats: reportData.stats
+      }
+    };
+    
+    // State requires string values and supports TTL in seconds
+    // 30 days = 30 * 24 * 60 * 60 = 2,592,000 seconds
+    const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+    await state.put(cacheKey, JSON.stringify(cacheData), { ttl: CACHE_TTL_SECONDS });
+    logger.info(`Report cached successfully in State: ${cacheKey} (TTL: 30 days)`);
+  } catch (error) {
+    logger.error(`Failed to cache report: ${error.message}`);
+    // Don't throw - allow job to complete even if caching fails
   }
 }
 
@@ -458,7 +496,42 @@ async function main(params) {
   const logger = Core.Logger('fetch-delivery-report', { level: params.LOG_LEVEL || 'info' });
 
   try {
-    logger.info('Fetch Delivery Report action invoked');
+    logger.info('========================================');
+    logger.info('=== FETCH DELIVERY REPORT STARTED ===');
+    logger.info('========================================');
+    logger.info('Action invoked at:', new Date().toISOString());
+    logger.info('Incoming parameters:', {
+      sandbox: params.sandbox,
+      year: params.year,
+      month: params.month,
+      type: params.type,
+      includeAI: params.includeAI,
+      jobId: params.jobId,
+      hasToken: !!params.token,
+      hasHeaders: !!params.__ow_headers
+    });
+
+    // Extract environment variables from params (passed from app.config.yaml)
+    const AZURE_OPENAI_ENDPOINT = params.AZURE_OPENAI_ENDPOINT;
+    const AZURE_OPENAI_API_KEY = params.AZURE_OPENAI_API_KEY;
+    const AZURE_OPENAI_DEPLOYMENT = params.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
+    const AZURE_OPENAI_API_VERSION = params.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
+    const AZURE_OPENAI_MAX_TOKENS = parseInt(params.AZURE_OPENAI_MAX_TOKENS || '4000');
+    const ADOBE_ORG_ID = params.ADOBE_ORG_ID;
+    const ADOBE_TENANT_ID = params.ADOBE_TENANT_ID;
+    const ADOBE_API_KEY_XLG_DEV = params.ADOBE_API_KEY_XLG_DEV;
+    const ADOBE_API_KEY_XLG_STAGE = params.ADOBE_API_KEY_XLG_STAGE;
+    const ADOBE_API_KEY_XLG_PROD = params.ADOBE_API_KEY_XLG_PROD;
+
+    logger.info('Environment variables loaded:', {
+      hasAzureEndpoint: !!AZURE_OPENAI_ENDPOINT,
+      hasAzureApiKey: !!AZURE_OPENAI_API_KEY,
+      hasAdobeOrgId: !!ADOBE_ORG_ID,
+      hasAdobeTenantId: !!ADOBE_TENANT_ID,
+      hasDevApiKey: !!ADOBE_API_KEY_XLG_DEV,
+      hasStageApiKey: !!ADOBE_API_KEY_XLG_STAGE,
+      hasProdApiKey: !!ADOBE_API_KEY_XLG_PROD
+    });
 
     // Extract IMS token from Authorization header
     // OpenWhisk normalizes headers to lowercase
@@ -508,27 +581,46 @@ async function main(params) {
 
     logger.info(`Fetching ${type} for ${year}-${month} (${params.sandbox})`);
 
+    // Extract jobId if running in async mode
+    const jobId = params.jobId;
+
     let campaigns = [];
     let journeys = [];
 
-    // Fetch campaigns if needed
+    // Stage 1: Fetch campaigns (0-25%)
     if (type === 'campaign' || type === 'both') {
+      await updateProgress(jobId, 'processing', 'campaigns', 10, 'Fetching campaigns...', 0, 0, logger);
+      
       logger.info('Fetching campaigns...');
       const campaignResp = await fetchCampaigns(credentials, startMs, endMs, logger);
       campaigns = processCampaigns(campaignResp, logger);
       logger.info(`Fetched ${campaigns.length} campaigns`);
+      
+      await updateProgress(jobId, 'processing', 'campaigns', 25, `Fetched ${campaigns.length} campaigns`, campaigns.length, campaigns.length, logger);
     }
 
-    // Fetch journeys if needed
+    // Stage 2: Fetch journeys (25-40%)
     if (type === 'journey' || type === 'both') {
+      await updateProgress(jobId, 'processing', 'journeys', 30, 'Fetching journeys...', 0, 0, logger);
+      
       logger.info('Fetching journeys...');
       const journeyResp = await fetchJourneys(credentials, startMs, endMs, logger);
       journeys = processJourneys(journeyResp, logger);
       logger.info(`Fetched ${journeys.length} journeys`);
+      
+      await updateProgress(jobId, 'processing', 'journeys', 40, `Fetched ${journeys.length} journeys`, journeys.length, journeys.length, logger);
 
-      // Fetch journey details in batches to get channels
+      // Stage 3: Fetch journey details in batches to get channels (40-70%)
       if (journeys.length > 0) {
         logger.info(`Fetching channel details for ${journeys.length} journeys...`);
+        await updateProgress(jobId, 'processing', 'details', 40, `Fetching channel details for ${journeys.length} journeys...`, 0, journeys.length, logger);
+        
+        const apiKeys = {
+          dev: ADOBE_API_KEY_XLG_DEV,
+          stage: ADOBE_API_KEY_XLG_STAGE,
+          prod: ADOBE_API_KEY_XLG_PROD
+        };
+        
         const BATCH_SIZE = 5;
         let processed = 0;
 
@@ -537,7 +629,7 @@ async function main(params) {
           
           await Promise.all(batch.map(async (journey) => {
             try {
-              const detail = await fetchJourneyDetail(credentials, journey.campaignId, logger);
+              const detail = await fetchJourneyDetail(credentials, journey.campaignId, apiKeys, logger);
               if (detail) {
                 const channels = extractChannelsFromDetail(detail);
                 journey._channels = channels.join(', ');
@@ -549,6 +641,10 @@ async function main(params) {
             processed++;
           }));
 
+          // Update progress: 40% + (processed/total * 30%)
+          const progressPercent = 40 + Math.round((processed / journeys.length) * 30);
+          await updateProgress(jobId, 'processing', 'details', progressPercent, `Processing journey details ${processed}/${journeys.length}`, processed, journeys.length, logger);
+          
           logger.info(`Processed ${processed}/${journeys.length} journey details`);
         }
       }
@@ -559,10 +655,20 @@ async function main(params) {
       Number(b.modifiedAt) - Number(a.modifiedAt)
     );
 
-    // Generate AI summaries if enabled
+    // Stage 4: Generate AI summaries if enabled (70-95%)
     let aiSummaries = {};
     if (includeAI && AZURE_OPENAI_ENDPOINT && AZURE_OPENAI_API_KEY) {
       logger.info(`Generating AI summaries for ${combined.length} items...`);
+      await updateProgress(jobId, 'processing', 'ai', 70, `Generating AI summaries for ${combined.length} items...`, 0, combined.length, logger);
+      
+      const azureConfig = {
+        endpoint: AZURE_OPENAI_ENDPOINT,
+        apiKey: AZURE_OPENAI_API_KEY,
+        deployment: AZURE_OPENAI_DEPLOYMENT,
+        apiVersion: AZURE_OPENAI_API_VERSION,
+        maxTokens: AZURE_OPENAI_MAX_TOKENS
+      };
+      
       const BATCH_SIZE = 5;
       let processed = 0;
 
@@ -571,7 +677,7 @@ async function main(params) {
         
         await Promise.all(batch.map(async (item) => {
           try {
-            const aiResult = await generateAISummary(item, logger);
+            const aiResult = await generateAISummary(item, azureConfig, logger);
             if (aiResult) {
               aiSummaries[item.campaignId] = aiResult;
               // Attach AI data to item for easy access
@@ -583,6 +689,10 @@ async function main(params) {
           processed++;
         }));
 
+        // Update progress: 70% + (processed/total * 25%)
+        const progressPercent = 70 + Math.round((processed / combined.length) * 25);
+        await updateProgress(jobId, 'processing', 'ai', progressPercent, `Generating AI summaries ${processed}/${combined.length}`, processed, combined.length, logger);
+        
         logger.info(`Generated AI summaries: ${processed}/${combined.length}`);
       }
       
@@ -594,6 +704,39 @@ async function main(params) {
     }
 
     logger.info(`Returning ${combined.length} total items (${campaigns.length} campaigns, ${journeys.length} journeys)`);
+
+    // Prepare response data
+    const responseData = {
+      campaigns,
+      journeys,
+      combined,
+      aiSummaries,
+      tenantId: ADOBE_TENANT_ID,
+      stats: {
+        totalCampaigns: campaigns.length,
+        totalJourneys: journeys.length,
+        total: combined.length,
+        aiSummariesGenerated: Object.keys(aiSummaries).length,
+      },
+    };
+
+    // Stage 5: Cache the report and mark complete (95-100%)
+    if (jobId) {
+      await updateProgress(jobId, 'processing', 'caching', 95, 'Caching report...', combined.length, combined.length, logger);
+      
+      const cacheKey = `report-${params.sandbox}-${params.year}-${params.month}-${params.type}`;
+      await cacheReport(cacheKey, {
+        params: {
+          sandbox: params.sandbox,
+          year: params.year,
+          month: params.month,
+          type: params.type
+        },
+        ...responseData
+      }, logger);
+      
+      await updateProgress(jobId, 'complete', 'done', 100, 'Report generation complete!', combined.length, combined.length, logger);
+    }
 
     return {
       statusCode: 200,

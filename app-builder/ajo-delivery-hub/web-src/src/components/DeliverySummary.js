@@ -71,6 +71,19 @@ const DeliverySummary = ({ credentials }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
+  
+  // Progress tracking state
+  const [isPolling, setIsPolling] = useState(false);
+  const [jobId, setJobId] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState('');
+  const [progressMessage, setProgressMessage] = useState('');
+  const [itemsProcessed, setItemsProcessed] = useState(0);
+  const [itemsTotal, setItemsTotal] = useState(0);
+  
+  // Cache state
+  const [cachedReport, setCachedReport] = useState(null);
+  const [showCachePrompt, setShowCachePrompt] = useState(false);
 
   // Build month options from Jan 2026 up to current month (newest first)
   const buildMonthOptions = () => {
@@ -93,25 +106,68 @@ const DeliverySummary = ({ credentials }) => {
     return new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
   };
 
-  const fetchDeliveryData = async () => {
+  const fetchDeliveryData = async (forceFresh = false) => {
+    console.log('========================================');
+    console.log('fetchDeliveryData called with forceFresh:', forceFresh);
+    console.log('forceFresh type:', typeof forceFresh);
+    console.log('forceFresh === false:', forceFresh === false);
+    console.log('!forceFresh:', !forceFresh);
+    
     setIsLoading(true);
     setError(null);
     setData(null);
+    setShowCachePrompt(false);
+    setCachedReport(null);
 
     try {
       const { year, month } = monthOptions[selectedMonthIndex];
       
-      console.log(`Calling fetch-delivery-report action: ${year}-${month}, type: ${selectedType}`);
-      
-      // DEBUG: Print full IMS token for testing
-      console.log('=== FULL IMS TOKEN FROM REACT (FOR DEBUG ONLY) ===');
-      console.log(credentials.token);
-      console.log('Token length:', credentials.token?.length);
-      console.log('=== END IMS TOKEN ===');
-      
-      // Call the server-side action
-      const response = await actionWebInvoke({
-        actionName: 'fetch-delivery-report',
+      // Step 1: Check cache first (unless forcing fresh)
+      if (!forceFresh) {
+        console.log('========================================');
+        console.log('Checking cache with params:', {
+          sandbox: selectedSandbox,
+          year: year.toString(),
+          month: month.toString(),
+          type: selectedType,
+        });
+        
+        const cacheResponse = await actionWebInvoke({
+          actionName: 'get-cached-report',
+          params: {
+            sandbox: selectedSandbox,
+            year: year.toString(),
+            month: month.toString(),
+            type: selectedType,
+          },
+        });
+
+        console.log('Cache response received:', cacheResponse);
+
+        if (cacheResponse.found) {
+          console.log('✅ CACHE HIT! Report found in cache');
+          console.log('Cache details:', {
+            cachedAt: cacheResponse.cachedAt,
+            ageInDays: cacheResponse.ageInDays,
+            itemCount: cacheResponse.report?.combined?.length || 0,
+            stats: cacheResponse.stats
+          });
+          setCachedReport(cacheResponse);
+          setShowCachePrompt(true);
+          setIsLoading(false);
+          return; // Stop here, let user decide
+        }
+        
+        console.log('❌ CACHE MISS - No cached report found. Reason:', cacheResponse.reason || 'unknown');
+        console.log('Starting fresh fetch...');
+      } else {
+        console.log('🔄 Force fresh fetch requested - skipping cache check');
+      }
+
+      // Step 2: Start async job
+      console.log('Starting async report fetch...');
+      const startResponse = await actionWebInvoke({
+        actionName: 'start-report-fetch',
         imsToken: credentials.token,
         params: {
           sandbox: selectedSandbox,
@@ -121,26 +177,117 @@ const DeliverySummary = ({ credentials }) => {
         },
       });
 
-      console.log('Action response:', response);
-
-      if (response.error) {
-        throw new Error(response.error);
+      if (startResponse.error) {
+        throw new Error(startResponse.error);
       }
 
-      // The action returns the data structure directly
-      setData(response);
+      const newJobId = startResponse.jobId;
+      setJobId(newJobId);
+      setIsPolling(true);
+      setProgress(0);
+      setProgressMessage('Starting...');
       
-      // Store tenantId from backend response
-      if (response.tenantId) {
-        setTenantId(response.tenantId);
-      }
-      
+      console.log('Job started:', newJobId);
+
+      // Step 3: Poll for progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await actionWebInvoke({
+            actionName: 'get-report-status',
+            params: { jobId: newJobId },
+          });
+
+          if (statusResponse.error) {
+            console.error('Status poll error:', statusResponse.error);
+            clearInterval(pollInterval);
+            setError('Failed to get job status');
+            setIsPolling(false);
+            setIsLoading(false);
+            return;
+          }
+
+          // Update progress UI
+          setProgress(statusResponse.progress || 0);
+          setProgressStage(statusResponse.stage || '');
+          setProgressMessage(statusResponse.message || '');
+          setItemsProcessed(statusResponse.itemsProcessed || 0);
+          setItemsTotal(statusResponse.itemsTotal || 0);
+
+          console.log(`Progress: ${statusResponse.progress}% - ${statusResponse.message}`);
+
+          // Check if complete
+          if (statusResponse.status === 'complete') {
+            clearInterval(pollInterval);
+            setIsPolling(false);
+            
+            // Fetch the cached result (it was just cached by the backend)
+            console.log('Job complete! Fetching cached result...');
+            const finalCache = await actionWebInvoke({
+              actionName: 'get-cached-report',
+              params: {
+                sandbox: selectedSandbox,
+                year: year.toString(),
+                month: month.toString(),
+                type: selectedType,
+              },
+            });
+
+            if (finalCache.found && finalCache.report) {
+              setData(finalCache.report);
+              if (finalCache.report.tenantId) {
+                setTenantId(finalCache.report.tenantId);
+              }
+              console.log('Report loaded successfully!');
+            } else {
+              throw new Error('Report generation complete but not found in cache');
+            }
+            
+            setIsLoading(false);
+          }
+
+        } catch (pollError) {
+          console.error('Polling error:', pollError);
+          clearInterval(pollInterval);
+          setError(pollError.message || 'Failed to poll job status');
+          setIsPolling(false);
+          setIsLoading(false);
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Set timeout to stop polling after 10 minutes
+      setTimeout(() => {
+        if (isPolling) {
+          clearInterval(pollInterval);
+          setError('Job timed out after 10 minutes');
+          setIsPolling(false);
+          setIsLoading(false);
+        }
+      }, 600000);
+
     } catch (err) {
       console.error('Failed to fetch delivery data:', err);
       setError(err.message || 'Failed to fetch delivery data');
-    } finally {
       setIsLoading(false);
+      setIsPolling(false);
     }
+  };
+
+  // Load cached report
+  const loadCachedReport = () => {
+    if (cachedReport && cachedReport.report) {
+      setData(cachedReport.report);
+      if (cachedReport.report.tenantId) {
+        setTenantId(cachedReport.report.tenantId);
+      }
+      setShowCachePrompt(false);
+      console.log('Loaded from cache');
+    }
+  };
+
+  // Fetch fresh report (skip cache)
+  const fetchFresh = () => {
+    setShowCachePrompt(false);
+    fetchDeliveryData(true); // Force fresh
   };
 
   const handleExportCSV = () => {
@@ -294,7 +441,7 @@ const DeliverySummary = ({ credentials }) => {
         </Picker>
 
         {/* Fetch Button */}
-        <Button variant="cta" onPress={fetchDeliveryData} isDisabled={isLoading}>
+        <Button variant="cta" onPress={() => fetchDeliveryData(false)} isDisabled={isLoading}>
           {isLoading ? (
             <Flex gap="size-100" alignItems="center">
               <ProgressCircle size="S" isIndeterminate />
@@ -361,6 +508,169 @@ const DeliverySummary = ({ credentials }) => {
             <Text>{getCountDisplay()}</Text>
           </View>
         </Flex>
+      )}
+
+      {/* Cache Prompt */}
+      {showCachePrompt && cachedReport && (
+        <Well marginBottom="size-300">
+          <Flex direction="column" gap="size-200">
+            <Heading level={4}>✅ Cached Report Available</Heading>
+            <Text>
+              Last generated: {new Date(cachedReport.cachedAt).toLocaleString()}
+              {cachedReport.ageInDays !== undefined && ` (${cachedReport.ageInDays} days ago)`}
+            </Text>
+            {cachedReport.stats && (
+              <Text>
+                Contains: {cachedReport.stats.total || 0} items
+                {cachedReport.stats.aiSummariesGenerated && ` with ${cachedReport.stats.aiSummariesGenerated} AI summaries`}
+              </Text>
+            )}
+            <Flex gap="size-200" marginTop="size-100">
+              <Button variant="cta" onPress={loadCachedReport}>
+                Use Cached Report
+              </Button>
+              <Button variant="secondary" onPress={fetchFresh}>
+                <Refresh />
+                <Text>Fetch Fresh</Text>
+              </Button>
+            </Flex>
+          </Flex>
+        </Well>
+      )}
+
+      {/* Progress Display - Dual Progress Bars */}
+      {isPolling && (
+        <Well marginBottom="size-300">
+          <Flex direction="column" gap="size-300">
+            <Heading level={4}>Fetching Delivery Report</Heading>
+            
+            {/* Data Fetching Progress Bar */}
+            <View>
+              <Flex direction="row" alignItems="center" gap="size-100" marginBottom="size-100">
+                <Text UNSAFE_style={{ fontWeight: 600, fontSize: '14px' }}>
+                  📊 Data Fetching
+                </Text>
+                {progress >= 70 && (
+                  <Text UNSAFE_style={{ color: '#2d9d78', fontWeight: 600 }}>✓</Text>
+                )}
+              </Flex>
+              
+              <View UNSAFE_style={{ 
+                width: '100%', 
+                height: '24px', 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: '4px',
+                overflow: 'hidden',
+                position: 'relative',
+                marginBottom: '8px'
+              }}>
+                <View UNSAFE_style={{
+                  width: `${Math.min(100, (progress / 70) * 100)}%`,
+                  height: '100%',
+                  backgroundColor: progress >= 70 ? '#2d9d78' : '#1473e6',
+                  transition: 'width 0.3s ease, background-color 0.3s ease'
+                }}>
+                  <Text UNSAFE_style={{ 
+                    color: '#fff', 
+                    fontWeight: 600, 
+                    fontSize: '12px',
+                    position: 'absolute',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    top: '50%',
+                    marginTop: '-6px'
+                  }}>
+                    {Math.round(Math.min(100, (progress / 70) * 100))}%
+                  </Text>
+                </View>
+              </View>
+
+              {/* Data fetching status message - only show when in data stages */}
+              {progressStage !== 'ai' && progressStage !== 'caching' && (
+                <Flex direction="row" gap="size-100" alignItems="center">
+                  <ProgressCircle size="S" isIndeterminate />
+                  <Text UNSAFE_style={{ fontSize: '13px', color: '#6e6e6e' }}>
+                    {progressMessage || 'Fetching data...'}
+                  </Text>
+                </Flex>
+              )}
+              {progress >= 70 && (
+                <Text UNSAFE_style={{ fontSize: '13px', color: '#2d9d78', fontWeight: 500 }}>
+                  ✓ Data fetching complete
+                </Text>
+              )}
+            </View>
+
+            {/* AI Summary Generation Progress Bar - only show when AI stage starts */}
+            {progressStage === 'ai' && (
+              <View>
+                <Flex direction="row" alignItems="center" gap="size-100" marginBottom="size-100">
+                  <Text UNSAFE_style={{ fontWeight: 600, fontSize: '14px' }}>
+                    🤖 AI Summary Generation
+                  </Text>
+                  {progress >= 95 && (
+                    <Text UNSAFE_style={{ color: '#2d9d78', fontWeight: 600 }}>✓</Text>
+                  )}
+                </Flex>
+                
+                <View UNSAFE_style={{ 
+                  width: '100%', 
+                  height: '24px', 
+                  backgroundColor: '#f0f0f0', 
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  marginBottom: '8px'
+                }}>
+                  <View UNSAFE_style={{
+                    width: `${itemsTotal > 0 ? (itemsProcessed / itemsTotal) * 100 : 0}%`,
+                    height: '100%',
+                    backgroundColor: progress >= 95 ? '#2d9d78' : '#9333ea',
+                    transition: 'width 0.3s ease, background-color 0.3s ease'
+                  }}>
+                    <Text UNSAFE_style={{ 
+                      color: '#fff', 
+                      fontWeight: 600, 
+                      fontSize: '12px',
+                      position: 'absolute',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      top: '50%',
+                      marginTop: '-6px'
+                    }}>
+                      {itemsTotal > 0 ? Math.round((itemsProcessed / itemsTotal) * 100) : 0}%
+                    </Text>
+                  </View>
+                </View>
+
+                {/* AI generation status */}
+                <Flex direction="row" gap="size-100" alignItems="center" marginBottom="size-50">
+                  <ProgressCircle size="S" isIndeterminate />
+                  <Text UNSAFE_style={{ fontSize: '13px', color: '#6e6e6e' }}>
+                    {progressMessage || 'Generating AI summaries...'}
+                  </Text>
+                </Flex>
+                
+                {/* Items Counter */}
+                {itemsTotal > 0 && (
+                  <Text UNSAFE_style={{ fontSize: '13px', color: '#6e6e6e' }}>
+                    Processing: {itemsProcessed} / {itemsTotal} items
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {/* Caching stage indicator */}
+            {progressStage === 'caching' && (
+              <Flex direction="row" gap="size-100" alignItems="center">
+                <ProgressCircle size="S" isIndeterminate />
+                <Text UNSAFE_style={{ fontSize: '13px', color: '#6e6e6e', fontWeight: 500 }}>
+                  💾 {progressMessage || 'Caching report...'}
+                </Text>
+              </Flex>
+            )}
+          </Flex>
+        </Well>
       )}
 
       {/* Error Message */}

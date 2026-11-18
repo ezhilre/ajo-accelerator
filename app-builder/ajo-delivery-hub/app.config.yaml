@@ -31,9 +31,55 @@ application:
             runtime: nodejs:22
             inputs:
               LOG_LEVEL: debug
+              AZURE_OPENAI_ENDPOINT: $AZURE_OPENAI_ENDPOINT
+              AZURE_OPENAI_API_KEY: $AZURE_OPENAI_API_KEY
+              AZURE_OPENAI_DEPLOYMENT: $AZURE_OPENAI_DEPLOYMENT
+              AZURE_OPENAI_API_VERSION: $AZURE_OPENAI_API_VERSION
+              AZURE_OPENAI_MAX_TOKENS: $AZURE_OPENAI_MAX_TOKENS
+              ADOBE_ORG_ID: $ADOBE_ORG_ID
+              ADOBE_TENANT_ID: $ADOBE_TENANT_ID
+              ADOBE_API_KEY_XLG_DEV: $ADOBE_API_KEY_XLG_DEV
+              ADOBE_API_KEY_XLG_STAGE: $ADOBE_API_KEY_XLG_STAGE
+              ADOBE_API_KEY_XLG_PROD: $ADOBE_API_KEY_XLG_PROD
             annotations:
               require-adobe-auth: false
               final: true
             limits:
               timeout: 300000
               memory: 512
+          get-cached-report:
+            function: actions/get-cached-report/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 60000
+              memory: 256
+          start-report-fetch:
+            function: actions/start-report-fetch/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 60000
+              memory: 256
+          get-report-status:
+            function: actions/get-report-status/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 60000
+              memory: 256
