@@ -571,7 +571,13 @@ async function main(params) {
     const year = parseInt(params.year);
     const month = parseInt(params.month);
     const type = params.type; // 'campaign' | 'journey' | 'both'
-    const includeAI = params.includeAI !== 'false'; // default true
+    
+    // Convert includeAI: handle both string "false"/"true" and boolean false/true
+    logger.info('=== INCLUDEAI PARAMETER CHECK ===');
+    logger.info('Received params.includeAI:', params.includeAI, 'Type:', typeof params.includeAI);
+    const includeAI = params.includeAI !== false && params.includeAI !== 'false'; // default true
+    logger.info('Converted includeAI:', includeAI, 'Type:', typeof includeAI);
+    logger.info('Will generate AI summaries:', includeAI);
 
     // Calculate date range
     const startDate = new Date(year, month - 1, 1);

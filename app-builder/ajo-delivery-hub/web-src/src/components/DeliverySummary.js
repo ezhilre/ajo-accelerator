@@ -20,7 +20,8 @@ import {
   DialogTrigger,
   Content,
   Divider,
-  ButtonGroup
+  ButtonGroup,
+  Checkbox
 } from '@adobe/react-spectrum';
 import Download from '@spectrum-icons/workflow/Download';
 import Refresh from '@spectrum-icons/workflow/Refresh';
@@ -64,6 +65,7 @@ const DeliverySummary = ({ credentials }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
   const [selectedType, setSelectedType] = useState('campaign'); // 'campaign' | 'journey'
   const [selectedSandbox, setSelectedSandbox] = useState('xlg-dev'); // Default sandbox
+  const [includeAI, setIncludeAI] = useState(true); // AI Insights enabled by default
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -174,6 +176,7 @@ const DeliverySummary = ({ credentials }) => {
           year: year.toString(),
           month: month.toString(),
           type: selectedType,
+          includeAI: includeAI.toString(),
         },
       });
 
@@ -439,6 +442,16 @@ const DeliverySummary = ({ credentials }) => {
           <Item key="xlg-stage">xlg-stage</Item>
           <Item key="xlg-prod">xlg-prod</Item>
         </Picker>
+
+        {/* AI Insights Checkbox */}
+        <View UNSAFE_style={{ paddingBottom: '8px' }}>
+          <Checkbox 
+            isSelected={includeAI}
+            onChange={setIncludeAI}
+          >
+            AI Insights
+          </Checkbox>
+        </View>
 
         {/* Fetch Button */}
         <Button variant="cta" onPress={() => fetchDeliveryData(false)} isDisabled={isLoading}>

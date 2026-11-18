@@ -67,12 +67,20 @@ async function main(params) {
       logger.info('✓ OpenWhisk client initialized successfully');
       
       const actionName = 'ajo-delivery-hub/fetch-delivery-report';
+      
+      // Convert includeAI: handle both string "false"/"true" and boolean false/true
+      const includeAIValue = params.includeAI !== 'false' && params.includeAI !== false;
+      
+      logger.info('=== INCLUDEAI CONVERSION ===');
+      logger.info('Received params.includeAI:', params.includeAI, 'Type:', typeof params.includeAI);
+      logger.info('Converted includeAI:', includeAIValue, 'Type:', typeof includeAIValue);
+      
       const invokeParams = {
         sandbox: params.sandbox,
         year: params.year,
         month: params.month,
         type: params.type,
-        includeAI: params.includeAI !== 'false',
+        includeAI: includeAIValue,
         jobId: jobId,
         token: token,
         __ow_headers: params.__ow_headers
